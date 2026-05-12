@@ -58,8 +58,13 @@ struct NearbyStopsView: View {
                     Button {
                         scheduleReload(delayMs: 0)
                     } label: {
-                        Image(systemName: "arrow.clockwise")
+                        if loading {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
+                    .disabled(loading)
                 }
             }
             .onChange(of: selectedStop) { _, newStop in
@@ -77,44 +82,7 @@ struct NearbyStopsView: View {
         if let stop = selectedStop {
             selectedStopCard(stop)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-        } else {
-            stopsCard
-                .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-    }
-
-    @ViewBuilder
-    private var stopsCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Stops in view").font(.headline)
-                Spacer()
-                if loading { ProgressView().scaleEffect(0.8) }
-            }
-            if let error {
-                Text(error).font(.caption).foregroundStyle(.red)
-            } else if stops.isEmpty && !loading {
-                Text("No stops in this area. Try panning or zooming in.")
-                    .foregroundStyle(.secondary).font(.subheadline)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(stops) { stop in
-                            Button {
-                                selectedStop = stop
-                            } label: {
-                                stopChip(stop)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .padding(.horizontal)
-        .padding(.bottom, 8)
     }
 
     private func selectedStopCard(_ stop: NearbyStop) -> some View {
@@ -215,15 +183,6 @@ struct NearbyStopsView: View {
                 Text(target, style: .time).font(.headline).monospacedDigit()
             }
         }
-    }
-
-    private func stopChip(_ stop: NearbyStop) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(stop.stopName).font(.subheadline).lineLimit(1)
-            Text("\(Int(stop.distanceM)) m").font(.caption).foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.thinMaterial, in: Capsule())
     }
 
     private func handleSelectionChange(_ newStop: NearbyStop?) {
