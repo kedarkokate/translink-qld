@@ -1,0 +1,100 @@
+import Foundation
+import CoreLocation
+
+enum TransLinkError: Error, LocalizedError {
+    case badURL
+    case http(Int)
+    case decode(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .badURL: "Bad request URL"
+        case .http(let c): "Server returned HTTP \(c)"
+        case .decode(let e): "Decode error: \(e.localizedDescription)"
+        }
+    }
+}
+
+@MainActor
+final class TransLinkClient {
+    static let shared = TransLinkClient()
+
+    private let baseURL: URL
+    private let session: URLSession
+    private let decoder: JSONDecoder
+
+    init(baseURL: URL = AppConfig.apiBaseURL) {
+        self.baseURL = baseURL
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        config.waitsForConnectivity = true
+        self.session = URLSession(configuration: config)
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        self.decoder = d
+    }
+
+    func nearbyStops(
+        lat: Double, lon: Double,
+        radiusM: Int = 500, limit: Int = 25,
+    ) async throws -> [NearbyStop] {
+        struct Resp: Decodable { let stops: [NearbyStop] }
+        let url = try makeURL("/v1/stops/nearby", query: [
+            "lat": "\(lat)", "lon": "\(lon)",
+            "radius_m": "\(radiusM)", "limit": "\(limit)",
+        ])
+        return try await get(url, as: Resp.self).stops
+    }
+
+    func stopDetail(stopId: String) async throws -> StopDetail {
+        let url = try makeURL("/v1/stops/\(stopId)")
+        return try await get(url, as: StopDetail.self)
+    }
+
+    func departures(
+        stopId: String, limit: Int = 15, windowMin: Int = 60,
+    ) async throws -> [Departure] {
+        struct Resp: Decodable { let departures: [Departure] }
+        let url = try makeURL("/v1/stops/\(stopId)/departures", query: [
+            "limit": "\(limit)", "window_min": "\(windowMin)",
+        ])
+        return try await get(url, as: Resp.self).departures
+    }
+
+    func vehicles(in bbox: BoundingBox? = nil) async throws -> [VehiclePosition] {
+        struct Resp: Decodable { let vehicles: [VehiclePosition] }
+        var query: [String: String] = [:]
+        if let b = bbox {
+            query["bbox"] = "\(b.minLon),\(b.minLat),\(b.maxLon),\(b.maxLat)"
+        }
+        let url = try makeURL("/v1/vehicles", query: query)
+        return try await get(url, as: Resp.self).vehicles
+    }
+
+    private func get<T: Decodable>(_ url: URL, as: T.Type) async throws -> T {
+        let (data, resp) = try await session.data(from: url)
+        guard let http = resp as? HTTPURLResponse else { throw TransLinkError.http(0) }
+        guard (200..<300).contains(http.statusCode) else {
+            throw TransLinkError.http(http.statusCode)
+        }
+        do { return try decoder.decode(T.self, from: data) }
+        catch { throw TransLinkError.decode(error) }
+    }
+
+    private func makeURL(_ path: String, query: [String: String] = [:]) throws -> URL {
+        guard var comps = URLComponents(
+            url: baseURL.appendingPathComponent(path),
+            resolvingAgainstBaseURL: false,
+        ) else { throw TransLinkError.badURL }
+        if !query.isEmpty {
+            comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
+        guard let url = comps.url else { throw TransLinkError.badURL }
+        return url
+    }
+}
+
+struct BoundingBox {
+    let minLat: Double; let minLon: Double
+    let maxLat: Double; let maxLon: Double
+}

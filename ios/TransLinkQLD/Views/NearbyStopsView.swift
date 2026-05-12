@@ -1,0 +1,123 @@
+import SwiftUI
+import MapKit
+import CoreLocation
+
+struct NearbyStopsView: View {
+    @Environment(LocationManager.self) private var locationManager
+    @State private var stops: [NearbyStop] = []
+    @State private var loading = false
+    @State private var error: String?
+    @State private var selectedStop: NearbyStop?
+    @State private var cameraPosition: MapCameraPosition = .userLocation(
+        followsHeading: false, fallback: .region(brisbaneFallback)
+    )
+
+    static let brisbaneFallback = MKCoordinateRegion(
+        center: .init(latitude: -27.4698, longitude: 153.0251),
+        latitudinalMeters: 1500, longitudinalMeters: 1500,
+    )
+
+    var body: some View {
+        NavigationStack {
+            ZStack(alignment: .bottom) {
+                Map(position: $cameraPosition, selection: $selectedStop) {
+                    UserAnnotation()
+                    ForEach(stops) { stop in
+                        Marker(stop.stopName, systemImage: "bus.fill",
+                               coordinate: stop.coordinate)
+                            .tag(stop)
+                    }
+                }
+                .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+                .mapControls {
+                    MapUserLocationButton()
+                    MapCompass()
+                }
+
+                stopsCard
+            }
+            .navigationTitle("Nearby")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await reload() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+            }
+            .task(id: locationKey) {
+                await reload()
+            }
+            .sheet(item: $selectedStop) { stop in
+                StopDetailView(stopId: stop.stopId, stopName: stop.stopName)
+                    .presentationDetents([.medium, .large])
+            }
+        }
+    }
+
+    private var locationKey: String {
+        guard let l = locationManager.lastLocation else { return "none" }
+        // Re-trigger only on meaningful movement (~50m grid)
+        return "\(Int(l.coordinate.latitude * 2000))_\(Int(l.coordinate.longitude * 2000))"
+    }
+
+    @ViewBuilder
+    private var stopsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Stops nearby").font(.headline)
+                Spacer()
+                if loading { ProgressView().scaleEffect(0.8) }
+            }
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.red)
+            } else if stops.isEmpty && !loading {
+                Text("No stops found within 500 m.").foregroundStyle(.secondary).font(.subheadline)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(stops) { stop in
+                            Button {
+                                selectedStop = stop
+                            } label: {
+                                stopChip(stop)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+    }
+
+    private func stopChip(_ stop: NearbyStop) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(stop.stopName).font(.subheadline).lineLimit(1)
+            Text("\(Int(stop.distanceM)) m").font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.thinMaterial, in: Capsule())
+    }
+
+    @MainActor
+    private func reload() async {
+        guard let loc = locationManager.lastLocation else { return }
+        loading = true; error = nil
+        defer { loading = false }
+        do {
+            stops = try await TransLinkClient.shared.nearbyStops(
+                lat: loc.coordinate.latitude,
+                lon: loc.coordinate.longitude,
+                radiusM: 500, limit: 25,
+            )
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}

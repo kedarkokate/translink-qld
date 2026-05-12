@@ -1,0 +1,28 @@
+{
+  "name": "translink-qld-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "schema:apply:local": "wrangler d1 execute translink_qld --local --file=./schema.sql",
+    "schema:apply:remote": "wrangler d1 execute translink_qld --remote --file=./schema.sql",
+    "seed:local": "tsx scripts/ingest.ts --local",
+    "seed:remote": "tsx scripts/ingest.ts --remote",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "gtfs-realtime-bindings": "^1.1.1",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "@types/node": "^22.0.0",
+    "csv-parse": "^5.5.6",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "unzipper": "^0.12.3",
+    "wrangler": "^3.95.0"
+  }
+}

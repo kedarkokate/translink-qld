@@ -1,0 +1,19 @@
+## User-specific
+xcuserdata/
+*.xcuserstate
+
+## Build / derived
+build/
+DerivedData/
+
+## Generated
+*.xcodeproj
+*.xcworkspace
+
+## Packages
+.swiftpm/
+.build/
+Package.resolved
+
+## Misc
+.DS_Store
