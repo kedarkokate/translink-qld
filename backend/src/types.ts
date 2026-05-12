@@ -17,6 +17,7 @@ export interface Stop {
   location_type: number;
   parent_station: string | null;
   platform_code: string | null;
+  route_types: string | null;
 }
 
 export interface StopWithDistance extends Stop {

@@ -91,6 +91,21 @@ async function main() {
     ["drop_off_type", s => Number(s ?? 0)],
   ], exec);
 
+  console.log(`→ deriving route_types per stop`);
+  await exec([
+    { sql: `DROP TABLE IF EXISTS stop_modes_tmp`, params: [] },
+    { sql: `CREATE TEMP TABLE stop_modes_tmp AS
+            SELECT st.stop_id, GROUP_CONCAT(DISTINCT r.route_type) AS rts
+            FROM stop_times st
+            JOIN trips t ON t.trip_id = st.trip_id
+            JOIN routes r ON r.route_id = t.route_id
+            GROUP BY st.stop_id`, params: [] },
+    { sql: `UPDATE stops SET route_types = (
+              SELECT rts FROM stop_modes_tmp WHERE stop_id = stops.stop_id
+            )`, params: [] },
+    { sql: `DROP TABLE stop_modes_tmp`, params: [] },
+  ]);
+
   await exec([{
     sql: `INSERT INTO feed_meta(key, value, updated_at)
           VALUES('last_ingest', ?1, ?2)

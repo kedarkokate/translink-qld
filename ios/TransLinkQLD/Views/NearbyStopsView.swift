@@ -33,8 +33,10 @@ struct NearbyStopsView: View {
                 Map(position: $cameraPosition, selection: $selectedStop) {
                     UserAnnotation()
                     ForEach(stops) { stop in
-                        Marker(stop.stopName, systemImage: "bus.fill",
+                        Marker(stop.stopName,
+                               systemImage: stop.isFerry ? "ferry.fill" : "bus.fill",
                                coordinate: stop.coordinate)
+                            .tint(stop.isFerry ? .blue : .red)
                             .tag(stop)
                     }
                 }

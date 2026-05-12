@@ -10,11 +10,14 @@ struct Stop: Codable, Identifiable, Hashable {
     let locationType: Int
     let parentStation: String?
     let platformCode: String?
+    let routeTypes: String?
 
     var id: String { stopId }
     var coordinate: CLLocationCoordinate2D {
         .init(latitude: stopLat, longitude: stopLon)
     }
+    var routeTypeSet: Set<Int> { parseRouteTypes(routeTypes) }
+    var isFerry: Bool { routeTypeSet.contains(4) }
 
     enum CodingKeys: String, CodingKey {
         case stopId = "stop_id"
@@ -25,6 +28,7 @@ struct Stop: Codable, Identifiable, Hashable {
         case locationType = "location_type"
         case parentStation = "parent_station"
         case platformCode = "platform_code"
+        case routeTypes = "route_types"
     }
 }
 
@@ -37,12 +41,15 @@ struct NearbyStop: Codable, Identifiable, Hashable {
     let locationType: Int
     let parentStation: String?
     let platformCode: String?
+    let routeTypes: String?
     let distanceM: Double
 
     var id: String { stopId }
     var coordinate: CLLocationCoordinate2D {
         .init(latitude: stopLat, longitude: stopLon)
     }
+    var routeTypeSet: Set<Int> { parseRouteTypes(routeTypes) }
+    var isFerry: Bool { routeTypeSet.contains(4) }
 
     enum CodingKeys: String, CodingKey {
         case stopId = "stop_id"
@@ -53,8 +60,16 @@ struct NearbyStop: Codable, Identifiable, Hashable {
         case locationType = "location_type"
         case parentStation = "parent_station"
         case platformCode = "platform_code"
+        case routeTypes = "route_types"
         case distanceM = "distance_m"
     }
+}
+
+private func parseRouteTypes(_ raw: String?) -> Set<Int> {
+    guard let raw, !raw.isEmpty else { return [] }
+    return Set(raw.split(separator: ",").compactMap {
+        Int($0.trimmingCharacters(in: .whitespaces))
+    })
 }
 
 struct Route: Codable, Identifiable, Hashable {

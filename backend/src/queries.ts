@@ -15,7 +15,7 @@ export async function findNearbyStops(
   // generous bbox returns at most a few hundred rows.
   const { results } = await env.DB.prepare(
     `SELECT stop_id, stop_code, stop_name, stop_lat, stop_lon,
-            location_type, parent_station, platform_code
+            location_type, parent_station, platform_code, route_types
      FROM stops
      WHERE stop_lat BETWEEN ?1 AND ?2
        AND stop_lon BETWEEN ?3 AND ?4
@@ -37,7 +37,7 @@ export async function findNearbyStops(
 export async function getStop(env: Env, stopId: string): Promise<Stop | null> {
   return env.DB.prepare(
     `SELECT stop_id, stop_code, stop_name, stop_lat, stop_lon,
-            location_type, parent_station, platform_code
+            location_type, parent_station, platform_code, route_types
      FROM stops WHERE stop_id = ?1`
   ).bind(stopId).first<Stop>();
 }

@@ -25,7 +25,11 @@ CREATE TABLE stops (
   stop_lon       REAL NOT NULL,
   location_type  INTEGER DEFAULT 0,
   parent_station TEXT,
-  platform_code  TEXT
+  platform_code  TEXT,
+  -- Comma-separated GTFS route_type values for the routes serving this stop.
+  -- Populated by the ingest finalization step (see scripts/ingest.ts).
+  -- e.g. "3" (bus only), "3,4" (bus + ferry), "2" (rail only).
+  route_types    TEXT
 );
 CREATE INDEX idx_stops_lat ON stops(stop_lat);
 CREATE INDEX idx_stops_lon ON stops(stop_lon);
