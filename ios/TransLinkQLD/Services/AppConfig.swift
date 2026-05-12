@@ -1,9 +1,10 @@
 import Foundation
 
 enum AppConfig {
-    /// Set this to your deployed Worker URL once you run `wrangler deploy`.
-    /// For local dev you can point this at the wrangler dev server
-    /// (default: http://localhost:8787) — note that the iOS simulator can
-    /// reach localhost directly; a physical device needs your Mac's LAN IP.
-    static let apiBaseURL: URL = URL(string: "http://localhost:8787")!
+    /// Production Cloudflare Worker. For local development against
+    /// `wrangler dev`, set the LOCAL_BACKEND env var when building, or
+    /// flip the literal below to `http://localhost:8787`.
+    static let apiBaseURL: URL = URL(
+        string: "https://translink-qld.kedarkokate.workers.dev",
+    )!
 }
