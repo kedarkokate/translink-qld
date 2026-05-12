@@ -1,7 +1,6 @@
 export interface Env {
   DB: D1Database;
   RT_CACHE: KVNamespace;
-  GTFS_BUCKET: R2Bucket;
   TRANSLINK_GTFS_URL: string;
   TRANSLINK_RT_TRIP_UPDATES: string;
   TRANSLINK_RT_VEHICLE_POSITIONS: string;

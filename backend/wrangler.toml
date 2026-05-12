@@ -7,22 +7,20 @@ compatibility_flags = ["nodejs_compat"]
 [triggers]
 crons = ["30 2 * * *"]
 
-# Fill in IDs after running:
-#   wrangler d1 create translink_qld
-#   wrangler kv namespace create RT_CACHE
-#   wrangler r2 bucket create translink-qld-gtfs
 [[d1_databases]]
 binding = "DB"
 database_name = "translink_qld"
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "4282adc2-f3f6-409c-a3f4-7382872ff110"
 
 [[kv_namespaces]]
 binding = "RT_CACHE"
-id = "REPLACE_WITH_KV_ID"
+id = "81f9f0a72cba43ca86547f2598459f65"
 
-[[r2_buckets]]
-binding = "GTFS_BUCKET"
-bucket_name = "translink-qld-gtfs"
+# R2 reserved for future Worker-side ingest pipeline. Enable R2 in the
+# Cloudflare dashboard, then re-add:
+# [[r2_buckets]]
+# binding = "GTFS_BUCKET"
+# bucket_name = "translink-qld-gtfs"
 
 [vars]
 TRANSLINK_GTFS_URL = "https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip"
