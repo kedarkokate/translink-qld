@@ -23,7 +23,7 @@ import { parse } from "csv-parse";
 const GTFS_URL = process.env.TRANSLINK_GTFS_URL
   ?? "https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip";
 const DEFAULT_BUDGET = 80_000;
-const BATCH_SIZE = 100;             // statements per HTTP request to D1
+const D1_PARAM_LIMIT = 100;         // D1 caps bound parameters at ?1..?100
 const FINALIZE_RESERVE = 14_000;    // budget to keep for route_types derivation
 
 type ColTransform = (raw: string | undefined) => unknown;
@@ -119,7 +119,7 @@ async function main() {
   while (tableIdx < TABLES.length && remaining > 0) {
     const spec = TABLES[tableIdx];
     if (offset === 0) {
-      await d1.exec([{ sql: `DELETE FROM ${spec.table}`, params: [] }]);
+      await d1.exec(`DELETE FROM ${spec.table}`);
     }
     const result = await ingestChunk(
       path.join(extractDir, spec.file), spec, d1, offset, remaining,
@@ -141,26 +141,22 @@ async function main() {
   let finalized = false;
   if (tableIdx >= TABLES.length) {
     if (remaining >= FINALIZE_RESERVE) {
-      console.log("→ deriving route_types per stop");
-      await d1.exec([
-        { sql: `DROP TABLE IF EXISTS stop_modes_tmp`, params: [] },
-        { sql: `CREATE TEMP TABLE stop_modes_tmp AS
-                SELECT st.stop_id, GROUP_CONCAT(DISTINCT r.route_type) AS rts
-                FROM stop_times st
-                JOIN trips t ON t.trip_id = st.trip_id
-                JOIN routes r ON r.route_id = t.route_id
-                GROUP BY st.stop_id`, params: [] },
-        { sql: `UPDATE stops SET route_types = (
-                  SELECT rts FROM stop_modes_tmp WHERE stop_id = stops.stop_id
-                )`, params: [] },
-        { sql: `DROP TABLE stop_modes_tmp`, params: [] },
-      ]);
-      await d1.exec([{
-        sql: `INSERT INTO feed_meta(key, value, updated_at)
-              VALUES('last_ingest', ?1, ?2)
-              ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
-        params: [new Date().toISOString(), Math.floor(Date.now() / 1000)],
-      }]);
+      console.log("→ deriving route_types per stop (single correlated UPDATE)");
+      // No TEMP tables — each D1 HTTP call is its own connection, so use a
+      // self-contained correlated subquery that idempotently fills the column.
+      await d1.exec(`UPDATE stops SET route_types = (
+        SELECT GROUP_CONCAT(DISTINCT r.route_type)
+        FROM stop_times st
+        JOIN trips t ON t.trip_id = st.trip_id
+        JOIN routes r ON r.route_id = t.route_id
+        WHERE st.stop_id = stops.stop_id
+      )`);
+      await d1.exec(
+        `INSERT INTO feed_meta(key, value, updated_at)
+         VALUES('last_ingest', ?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+        [new Date().toISOString(), Math.floor(Date.now() / 1000)],
+      );
       finalized = true;
     } else {
       console.log(`⚠ raw tables loaded but only ${remaining.toLocaleString()} budget left — finalize needs ~${FINALIZE_RESERVE.toLocaleString()}, run again tomorrow`);
@@ -185,16 +181,26 @@ async function ingestChunk(
   filepath: string, spec: TableSpec,
   d1: D1Client, offset: number, budget: number,
 ): Promise<ChunkResult> {
-  const placeholders = spec.cols.map((_, i) => `?${i + 1}`).join(",");
   const colNames = spec.cols.map(c => c[2] ?? c[0]).join(",");
-  const sql = `INSERT INTO ${spec.table}(${colNames}) VALUES(${placeholders})`;
-
+  const maxRowsPerStmt = Math.max(1, Math.floor(D1_PARAM_LIMIT / spec.cols.length));
   const parser = createReadStream(filepath).pipe(parse({ columns: true, trim: true, bom: true }));
 
   let skipped = 0;
   let written = 0;
-  let batch: { sql: string; params: unknown[] }[] = [];
+  let rowBuf: unknown[][] = [];
   let completed = true;
+
+  const flush = async () => {
+    if (rowBuf.length === 0) return;
+    const ncols = spec.cols.length;
+    const rowPlaceholders = rowBuf.map((_, ri) =>
+      "(" + spec.cols.map((_, ci) => `?${ri * ncols + ci + 1}`).join(",") + ")"
+    ).join(",");
+    const sql = `INSERT INTO ${spec.table}(${colNames}) VALUES ${rowPlaceholders}`;
+    const params = rowBuf.flat();
+    await d1.exec(sql, params);
+    rowBuf = [];
+  };
 
   for await (const row of parser) {
     if (skipped < offset) { skipped++; continue; }
@@ -203,31 +209,28 @@ async function ingestChunk(
       const v = transform((row as Record<string, string>)[src]);
       return v === undefined ? null : v;
     });
-    batch.push({ sql, params });
+    rowBuf.push(params);
     written++;
-    if (batch.length >= BATCH_SIZE) {
-      await d1.exec(batch);
-      batch = [];
-    }
+    if (rowBuf.length >= maxRowsPerStmt) await flush();
   }
-  if (batch.length) await d1.exec(batch);
+  await flush();
   return { rowsWritten: written, completed };
 }
 
 interface D1Client {
-  exec: (stmts: { sql: string; params: unknown[] }[]) => Promise<void>;
+  exec: (sql: string, params?: unknown[]) => Promise<void>;
   query: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>;
 }
 
 function makeClient(endpoint: string, token: string): D1Client {
-  async function call(stmts: { sql: string; params: unknown[] }[]) {
+  async function call(sql: string, params: unknown[]) {
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(stmts.map(s => ({ sql: s.sql, params: s.params }))),
+      body: JSON.stringify({ sql, params }),
     });
     if (!res.ok) {
       throw new Error(`D1 HTTP ${res.status}: ${await res.text()}`);
@@ -235,9 +238,9 @@ function makeClient(endpoint: string, token: string): D1Client {
     return await res.json() as { result: { results: unknown[] }[]; success: boolean };
   }
   return {
-    exec: async stmts => { await call(stmts); },
+    exec: async (sql, params = []) => { await call(sql, params); },
     query: async <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> => {
-      const json = await call([{ sql, params }]);
+      const json = await call(sql, params);
       return (json.result[0]?.results ?? []) as T[];
     },
   };
@@ -252,12 +255,12 @@ async function readProgress(d1: D1Client): Promise<Progress> {
 }
 
 async function writeProgress(d1: D1Client, p: Progress) {
-  await d1.exec([{
-    sql: `INSERT INTO feed_meta(key, value, updated_at)
-          VALUES('chunked_progress', ?1, ?2)
-          ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
-    params: [JSON.stringify(p), Math.floor(Date.now() / 1000)],
-  }]);
+  await d1.exec(
+    `INSERT INTO feed_meta(key, value, updated_at)
+     VALUES('chunked_progress', ?1, ?2)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+    [JSON.stringify(p), Math.floor(Date.now() / 1000)],
+  );
 }
 
 async function download(url: string, dest: string) {
