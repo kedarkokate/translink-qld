@@ -95,20 +95,16 @@ export async function getDepartures(
   const rows = await fetchScheduledRows(env, stopId, [...activeToday, ...activeYesterday]);
 
   const tripUpdates = await getTripUpdates(env).catch(() => new Map());
+  const yesterdayDate = offsetDate(now, -1);
 
   const out: Departure[] = [];
-  for (const r of rows) {
-    const isYesterday = activeYesterday.has(r.service_id);
-    const baseDate = isYesterday ? offsetDate(now, -1) : now;
-    const scheduledMs = applyGtfsTime(baseDate, r.departure_time);
-    if (scheduledMs < nowMs - 60_000) continue;
-    if (scheduledMs > nowMs + horizonMs) continue;
+  const consider = (r: ScheduledRow, scheduledMs: number) => {
+    if (scheduledMs < nowMs - 60_000) return;
+    if (scheduledMs > nowMs + horizonMs) return;
 
     const tu = tripUpdates.get(r.trip_id);
     const isCancelled = tu?.schedule_relationship === 3;
-    const stuMatch = tu?.stop_time_updates.find(
-      s => s.stop_id === stopId,
-    );
+    const stuMatch = tu?.stop_time_updates.find(s => s.stop_id === stopId);
     const delaySec = stuMatch?.departure_delay ?? stuMatch?.arrival_delay ?? null;
 
     out.push({
@@ -126,6 +122,18 @@ export async function getDepartures(
       is_realtime: tu != null,
       is_cancelled: isCancelled,
     });
+  };
+
+  for (const r of rows) {
+    // A service_id can be active on consecutive days, so each row may fire on
+    // today (anchored at today's midnight) AND/OR as the tail of yesterday's
+    // service day (only relevant when departure_time >= 24:00:00).
+    if (activeToday.has(r.service_id)) {
+      consider(r, applyGtfsTime(now, r.departure_time));
+    }
+    if (activeYesterday.has(r.service_id) && r.departure_time >= "24:00:00") {
+      consider(r, applyGtfsTime(yesterdayDate, r.departure_time));
+    }
   }
 
   out.sort((a, b) => {
@@ -184,37 +192,29 @@ function dayOfWeekColumn(yyyymmdd: string): string {
   return ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][d.getDay()];
 }
 
+const BRISBANE_DATE_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: BRISBANE_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+});
+
+// "YYYY-MM-DD" for the Brisbane-local calendar date of d.
+function brisbaneDateISO(d: Date): string {
+  return BRISBANE_DATE_FMT.format(d);
+}
+
 function serviceDate(now: Date, dayOffset: number): string {
-  const local = new Date(now.toLocaleString("en-US", { timeZone: BRISBANE_TZ }));
-  local.setDate(local.getDate() + dayOffset);
-  const y = local.getFullYear();
-  const m = String(local.getMonth() + 1).padStart(2, "0");
-  const d = String(local.getDate()).padStart(2, "0");
-  return `${y}${m}${d}`;
+  return brisbaneDateISO(offsetDate(now, dayOffset)).replaceAll("-", "");
 }
 
 function offsetDate(d: Date, dayOffset: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + dayOffset);
-  return r;
+  return new Date(d.getTime() + dayOffset * 86_400_000);
 }
 
-// Convert GTFS HH:MM:SS (where HH may be >=24) anchored at the given
-// service date midnight (Brisbane local) into an absolute UTC ms timestamp.
+// UTC ms for "midnight Brisbane on the Brisbane-local calendar date of baseDate",
+// plus the GTFS HH:MM:SS offset (which may exceed 24h for late-night trips).
+// Brisbane has no DST so the +10:00 offset is constant.
 function applyGtfsTime(baseDate: Date, hms: string): number {
-  const [hStr, mStr, sStr] = hms.split(":");
-  const totalSec = Number(hStr) * 3600 + Number(mStr) * 60 + Number(sStr);
-  const local = new Date(baseDate.toLocaleString("en-US", { timeZone: BRISBANE_TZ }));
-  local.setHours(0, 0, 0, 0);
-  // local is now midnight Brisbane in local-timezone-of-Worker space.
-  // Convert that back to a real UTC ms by re-applying the offset diff.
-  const tzOffsetMin = brisbaneOffsetMinutes(baseDate);
-  const localMidnightUtcMs = local.getTime() + (new Date().getTimezoneOffset() - tzOffsetMin) * 60_000;
-  return localMidnightUtcMs + totalSec * 1000;
-}
-
-function brisbaneOffsetMinutes(d: Date): number {
-  // Brisbane is fixed AEST (UTC+10), no DST.
-  void d;
-  return -600;
+  const [h, mn, s] = hms.split(":").map(Number);
+  const totalSec = h * 3600 + mn * 60 + s;
+  const midnightMs = Date.parse(`${brisbaneDateISO(baseDate)}T00:00:00+10:00`);
+  return midnightMs + totalSec * 1000;
 }

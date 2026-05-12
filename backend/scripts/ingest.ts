@@ -10,17 +10,21 @@
  *   CF_API_TOKEN=...        (token with D1:Edit on the account)
  *   CF_D1_DATABASE_ID=...   (same UUID as wrangler.toml database_id)
  */
-import { createWriteStream, createReadStream } from "node:fs";
+import { createWriteStream, createReadStream, readdirSync } from "node:fs";
 import { mkdir, rm, readFile } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Unzip } from "unzipper";
+import { DatabaseSync, StatementSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import unzipper from "unzipper";
 import { parse } from "csv-parse";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const GTFS_URL =
   process.env.TRANSLINK_GTFS_URL ?? "https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip";
-const BATCH = 500;
+const BATCH = 5000;
 
 const mode = process.argv.includes("--remote") ? "remote" : "local";
 
@@ -34,7 +38,7 @@ async function main() {
   const extractDir = path.join(work, "extracted");
   await mkdir(extractDir, { recursive: true });
   console.log(`⤓ extracting…`);
-  await pipeline(createReadStream(zipPath), Unzip({ path: extractDir }));
+  await pipeline(createReadStream(zipPath), unzipper.Extract({ path: extractDir }));
 
   const exec = mode === "local" ? execLocal : execRemote;
   console.log(`→ writing to ${mode} D1`);
@@ -115,7 +119,7 @@ async function ingestTable(
   const colNames = cols.map(c => c[2] ?? c[0]).join(",");
   const sql = `INSERT INTO ${table}(${colNames}) VALUES(${placeholders})`;
 
-  const parser = createReadStream(filepath).pipe(parse({ columns: true, trim: true }));
+  const parser = createReadStream(filepath).pipe(parse({ columns: true, trim: true, bom: true }));
   let batch: { sql: string; params: unknown[] }[] = [];
   let total = 0;
 
@@ -140,16 +144,45 @@ async function download(url: string, dest: string) {
   await pipeline(res.body as any, createWriteStream(dest));
 }
 
+let localDb: DatabaseSync | null = null;
+const stmtCache = new Map<string, StatementSync>();
+
+function getLocalDb(): DatabaseSync {
+  if (localDb) return localDb;
+  // miniflare stores each D1 binding as a content-hashed .sqlite file under
+  // backend/.wrangler/state/v3/d1/miniflare-D1DatabaseObject/. There's only
+  // one data file (everything else is metadata.sqlite).
+  const dir = path.resolve(__dirname, "../.wrangler/state/v3/d1/miniflare-D1DatabaseObject");
+  let entries: string[];
+  try { entries = readdirSync(dir); }
+  catch { throw new Error(
+    `Local D1 not initialised at ${dir}. Run \`npm run schema:apply:local\` first.`
+  ); }
+  const dataFile = entries.find(f => f.endsWith(".sqlite") && f !== "metadata.sqlite");
+  if (!dataFile) throw new Error(`No D1 data file in ${dir}`);
+  localDb = new DatabaseSync(path.join(dir, dataFile));
+  localDb.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+  return localDb;
+}
+
 async function execLocal(statements: { sql: string; params: unknown[] }[]) {
-  // Use wrangler's local D1 by shelling out. Slower than HTTP but simple.
-  const { spawn } = await import("node:child_process");
-  for (const s of statements) {
-    const cmd = ["d1", "execute", "translink_qld", "--local",
-                 "--command", inlineParams(s.sql, s.params)];
-    await new Promise<void>((resolve, reject) => {
-      const p = spawn("wrangler", cmd, { stdio: ["ignore", "ignore", "inherit"] });
-      p.on("exit", c => c === 0 ? resolve() : reject(new Error(`wrangler exit ${c}`)));
-    });
+  const db = getLocalDb();
+  db.exec("BEGIN");
+  try {
+    for (const s of statements) {
+      let stmt = stmtCache.get(s.sql);
+      if (!stmt) {
+        stmt = db.prepare(s.sql);
+        stmtCache.set(s.sql, stmt);
+      }
+      // node:sqlite rejects `undefined`; coerce to null defensively.
+      const safe = s.params.map(p => p === undefined ? null : p);
+      stmt.run(...(safe as never[]));
+    }
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
   }
 }
 
@@ -171,16 +204,6 @@ async function execRemote(statements: { sql: string; params: unknown[] }[]) {
   if (!res.ok) {
     throw new Error(`D1 HTTP ${res.status}: ${await res.text()}`);
   }
-}
-
-function inlineParams(sql: string, params: unknown[]): string {
-  return sql.replace(/\?(\d+)/g, (_, n) => sqlLit(params[Number(n) - 1]));
-}
-
-function sqlLit(v: unknown): string {
-  if (v === null || v === undefined) return "NULL";
-  if (typeof v === "number") return String(v);
-  return `'${String(v).replace(/'/g, "''")}'`;
 }
 
 function required(name: string): string {
