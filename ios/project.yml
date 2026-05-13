@@ -1,6 +1,6 @@
-name: TransLinkQLD
+name: TransitQLD
 options:
-  bundleIdPrefix: au.com.translinkqld
+  bundleIdPrefix: au.com.transitqld
   deploymentTarget:
     iOS: "17.0"
   developmentLanguage: en
@@ -16,15 +16,15 @@ settings:
     MARKETING_VERSION: "0.1.0"
 
 targets:
-  TransLinkQLD:
+  TransitQLD:
     type: application
     platform: iOS
     sources:
-      - path: TransLinkQLD
+      - path: TransitQLD
     info:
-      path: TransLinkQLD/Info.plist
+      path: TransitQLD/Info.plist
       properties:
-        CFBundleDisplayName: TransLink QLD
+        CFBundleDisplayName: TransitQLD
         UILaunchScreen:
           UIColorName: ""
         UISupportedInterfaceOrientations:
@@ -36,6 +36,6 @@ targets:
           - comgooglemaps
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: au.com.translinkqld.app
+        PRODUCT_BUNDLE_IDENTIFIER: au.com.transitqld.app
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         TARGETED_DEVICE_FAMILY: "1,2"

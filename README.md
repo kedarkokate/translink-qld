@@ -1,6 +1,6 @@
-# TransLink QLD
+# TransitQLD
 
-iOS app + Cloudflare Workers backend for the TransLink South East Queensland open data feed (GTFS static + GTFS-Realtime).
+iOS app + Cloudflare Workers backend for the TransLink South East Queensland open data feed (GTFS static + GTFS-Realtime). The on-device app is branded **TransitQLD**; the backend and repository keep the legacy `translink-qld` naming so deployed URLs and stored credentials stay stable.
 
 **v1 scope:** nearby stops, live next departures, vehicle positions on the map.
 
@@ -15,7 +15,7 @@ TransLinkQLD/
 │   └── wrangler.toml
 └── ios/             SwiftUI app (iOS 17+)
     ├── project.yml          xcodegen config
-    └── TransLinkQLD/        Swift sources
+    └── TransitQLD/          Swift sources
 ```
 
 ## Prerequisites — install in this order

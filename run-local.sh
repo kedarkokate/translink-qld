@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# run-local.sh — build and run the TransLinkQLD iOS app against the local
+# run-local.sh — build and run the TransitQLD iOS app against the local
 # Cloudflare Worker.
 #
 # Sequence:
@@ -25,8 +25,8 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$PROJECT_DIR/backend"
 IOS_DIR="$PROJECT_DIR/ios"
-BUNDLE_ID="au.com.translinkqld.app"
-SCHEME="TransLinkQLD"
+BUNDLE_ID="au.com.transitqld.app"
+SCHEME="TransitQLD"
 PORT=8787
 SIM_FALLBACKS=("iPhone 17 Pro" "iPhone 17" "iPhone 16 Pro" "iPhone 16" "iPhone 15 Pro" "iPhone 15")
 
