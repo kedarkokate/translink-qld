@@ -130,9 +130,22 @@ export async function searchStops(
 
   if (!results || results.length === 0) return [];
 
+  // Attach distances first so consolidateRailStations can keep the
+  // closest-platform distance when it collapses platforms into a parent.
+  const withDistance: StopWithDistance[] = results.map(s => ({
+    ...s,
+    distance_m: near
+      ? haversineMeters(near.lat, near.lon, s.stop_lat, s.stop_lon)
+      : Number.MAX_VALUE,
+  }));
+
+  // Collapse train station platforms into one entry per station so search
+  // results show "Central station" once instead of every platform.
+  const collapsed = await consolidateRailStations(env, withDistance);
+
   const qLower = trimmed.toLowerCase();
   type Scored = StopWithDistance & { _score: number };
-  const scored: Scored[] = results.map(s => {
+  const scored: Scored[] = collapsed.map(s => {
     const nameLower = s.stop_name.toLowerCase();
     let score: number;
     if (s.stop_code === trimmed) score = 100;
@@ -140,11 +153,9 @@ export async function searchStops(
     else if (s.stop_code?.startsWith(trimmed)) score = 70;
     else if (nameLower === qLower) score = 60;
     else if (nameLower.startsWith(qLower)) score = 40;
+    else if (nameLower.includes(qLower)) score = 20;
     else score = 10;
-    const distance = near
-      ? haversineMeters(near.lat, near.lon, s.stop_lat, s.stop_lon)
-      : Number.MAX_VALUE;
-    return { ...s, distance_m: distance, _score: score };
+    return { ...s, _score: score };
   });
 
   scored.sort((a, b) => {
