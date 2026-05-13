@@ -178,7 +178,10 @@ struct NearbyStopsView: View {
         Button {
             handleTileTap(tile)
         } label: {
-            tilePillLabel(icon: tile.iconName, text: tile.label, iconOnly: tile.iconOnlyOnMap)
+            tilePillLabel(
+                icon: tile.iconName, text: tile.label,
+                iconOnly: effectiveIconOnly(tile),
+            )
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tile.label)
@@ -204,11 +207,20 @@ struct NearbyStopsView: View {
                     ? "line.3.horizontal.decrease.circle.fill"
                     : "line.3.horizontal.decrease.circle",
                 text: MapTileKind.filters.label,
-                iconOnly: MapTileKind.filters.iconOnlyOnMap,
+                iconOnly: effectiveIconOnly(.filters),
             )
         }
         .accessibilityLabel("Filters")
         .contextMenu { tileLayoutMenu }
+    }
+
+    /// When a route is focused on the map the camera is zoomed to fit two
+    /// distant points and the tile stack can crowd the screen — collapse all
+    /// pills to icon-only in that mode. The clear-focus pill keeps its text
+    /// because the route name is meaningful content.
+    private func effectiveIconOnly(_ tile: MapTileKind) -> Bool {
+        if focusedStop != nil { return true }
+        return tile.iconOnlyOnMap
     }
 
     private func tilePillLabel(icon: String, text: String, iconOnly: Bool) -> some View {
