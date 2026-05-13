@@ -8,6 +8,7 @@ struct StopDetailView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var refreshTask: Task<Void, Never>?
+    @State private var routeStopsRequest: RouteStopsRequest?
 
     var body: some View {
         NavigationStack {
@@ -46,6 +47,9 @@ struct StopDetailView: View {
                 startAutoRefresh()
             }
             .onDisappear { refreshTask?.cancel() }
+            .sheet(item: $routeStopsRequest) { req in
+                RouteStopsView(shortName: req.shortName)
+            }
         }
     }
 
@@ -77,6 +81,7 @@ struct StopDetailView: View {
             if byKey[key] == nil {
                 byKey[key] = DepartureGroup(
                     key: key, badge: dep.routeBadge,
+                    routeShortName: dep.routeShortName,
                     headsign: dep.headsign, routeType: dep.routeType, times: [],
                 )
                 keyOrder.append(key)
@@ -100,7 +105,8 @@ struct StopDetailView: View {
 
     private func upcomingRow(_ group: DepartureGroup) -> some View {
         HStack(alignment: .center, spacing: 14) {
-            routeBadge(text: group.badge, type: group.routeType, prominent: true)
+            routeBadge(text: group.badge, type: group.routeType, prominent: true,
+                       shortName: group.routeShortName)
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.headsign ?? "—")
                     .font(.subheadline)
@@ -144,7 +150,7 @@ struct StopDetailView: View {
             ) {
                 ForEach(routes) { route in
                     routeBadge(text: route.displayName, type: route.routeType,
-                               prominent: false)
+                               prominent: false, shortName: route.routeShortName)
                 }
             }
         }
@@ -152,15 +158,32 @@ struct StopDetailView: View {
 
     // MARK: Route badge
 
-    private func routeBadge(text: String, type: Int, prominent: Bool) -> some View {
-        Text(text)
-            .font(.system(size: prominent ? 15 : 13,
-                          weight: .bold, design: .rounded))
+    private func routeBadge(
+        text: String, type: Int, prominent: Bool, shortName: String?,
+    ) -> some View {
+        let tappable = (shortName?.isEmpty == false)
+        return Button {
+            if let s = shortName, !s.isEmpty {
+                routeStopsRequest = RouteStopsRequest(shortName: s)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(text)
+                    .font(.system(size: prominent ? 15 : 13,
+                                  weight: .bold, design: .rounded))
+                if tappable {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: prominent ? 11 : 9, weight: .bold))
+                }
+            }
             .padding(.horizontal, prominent ? 12 : 10)
             .padding(.vertical, prominent ? 7 : 5)
             .foregroundStyle(.white)
             .background(routeColor(type), in: RoundedRectangle(cornerRadius: 8))
             .frame(minWidth: prominent ? 56 : 48)
+        }
+        .buttonStyle(.plain)
+        .disabled(!tappable)
     }
 
     private func routeColor(_ rt: Int) -> Color {
@@ -220,6 +243,7 @@ struct DepartureGroup: Identifiable {
     let key: String
     var id: String { key }
     let badge: String
+    let routeShortName: String?
     let headsign: String?
     let routeType: Int
     var times: [Departure]
