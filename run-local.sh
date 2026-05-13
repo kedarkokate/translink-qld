@@ -115,9 +115,14 @@ xcodebuild \
   | tail -3
 
 # --- 5) install + launch -------------------------------------------------
+# Xcode also writes an indexing stub under `Index.noindex/Build/...` that
+# has no Info.plist; skip it so simctl install doesn't choke on a missing
+# bundle ID.
 APP=$(find ~/Library/Developer/Xcode/DerivedData \
-        -path "*Debug-iphonesimulator/$SCHEME.app" -type d 2>/dev/null \
-      | head -1)
+        -name "$SCHEME.app" -type d \
+        -path "*/Debug-iphonesimulator/*" \
+        -not -path "*/Index.noindex/*" \
+        2>/dev/null | head -1)
 if [[ -z "$APP" ]]; then
   echo "✗ couldn't locate the built .app bundle"
   exit 1
