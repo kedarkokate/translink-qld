@@ -42,7 +42,9 @@ app.get("/v1/stops/nearby", async c => {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return c.json({ error: "lat and lon required" }, 400);
   }
-  return c.json({ stops: await findNearbyStops(c.env, lat, lon, radiusM, limit) });
+  return c.json({
+    stops: await findNearbyStops(c.env, lat, lon, radiusM, limit, true),
+  });
 });
 
 app.get("/v1/stops/:stop_id", async c => {

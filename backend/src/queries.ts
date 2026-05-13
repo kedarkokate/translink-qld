@@ -8,6 +8,7 @@ export async function findNearbyStops(
   env: Env,
   lat: number, lon: number,
   radiusM: number, limit: number,
+  consolidate: boolean = false,
 ): Promise<StopWithDistance[]> {
   const bbox = boundingBox(lat, lon, radiusM);
   // Bounding-box prefilter — keeps the scan ~O(stops in bbox), then we
@@ -24,14 +25,84 @@ export async function findNearbyStops(
     .bind(bbox.minLat, bbox.maxLat, bbox.minLon, bbox.maxLon)
     .all<Stop>();
 
-  return (results ?? [])
+  const withDistance = (results ?? [])
     .map(s => ({
       ...s,
       distance_m: haversineMeters(lat, lon, s.stop_lat, s.stop_lon),
     }))
-    .filter(s => s.distance_m <= radiusM)
+    .filter(s => s.distance_m <= radiusM);
+
+  const collapsed = consolidate
+    ? await consolidateRailStations(env, withDistance)
+    : withDistance;
+
+  return collapsed
     .sort((a, b) => a.distance_m - b.distance_m)
     .slice(0, limit);
+}
+
+/// Returns either [stopId] for a regular stop, or every child platform id
+/// when stopId references a station (location_type=1). Used so endpoints
+/// keyed by a station id transparently aggregate across all its platforms.
+async function expandStopId(env: Env, stopId: string): Promise<string[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT stop_id FROM stops WHERE stop_id = ?1 OR parent_station = ?1`
+  ).bind(stopId).all<{ stop_id: string }>();
+  const ids = (results ?? []).map(r => r.stop_id);
+  return ids.length > 0 ? ids : [stopId];
+}
+
+/// For each rail platform (route_type 1 or 2) that has a parent_station,
+/// replace the platform with its parent station record so the map shows
+/// a single pin per station. Other modes pass through unchanged.
+async function consolidateRailStations(
+  env: Env, stops: StopWithDistance[],
+): Promise<StopWithDistance[]> {
+  const isRailType = (rt: string | null) => {
+    const types = (rt ?? "").split(",");
+    return types.includes("2") || types.includes("1");
+  };
+
+  const parentIds = [...new Set(
+    stops
+      .filter(s => s.parent_station && isRailType(s.route_types))
+      .map(s => s.parent_station!),
+  )];
+  if (parentIds.length === 0) return stops;
+
+  const ph = parentIds.map((_, i) => `?${i + 1}`).join(",");
+  const { results } = await env.DB.prepare(
+    `SELECT stop_id, stop_code, stop_name, stop_lat, stop_lon,
+            location_type, parent_station, platform_code, route_types
+     FROM stops WHERE stop_id IN (${ph})`
+  ).bind(...parentIds).all<Stop>();
+  const parentMap = new Map((results ?? []).map(p => [p.stop_id, p]));
+
+  // Dedupe by station id; keep the nearest-platform distance and inherit
+  // route_types from one of the platforms (parent stations don't carry it).
+  const out = new Map<string, StopWithDistance>();
+  for (const s of stops) {
+    if (s.parent_station && isRailType(s.route_types) && parentMap.has(s.parent_station)) {
+      const parent = parentMap.get(s.parent_station)!;
+      const existing = out.get(parent.stop_id);
+      const distance = existing ? Math.min(existing.distance_m, s.distance_m) : s.distance_m;
+      out.set(parent.stop_id, {
+        stop_id: parent.stop_id,
+        stop_code: parent.stop_code,
+        stop_name: parent.stop_name,
+        stop_lat: parent.stop_lat,
+        stop_lon: parent.stop_lon,
+        location_type: parent.location_type,
+        parent_station: parent.parent_station,
+        platform_code: parent.platform_code,
+        route_types: s.route_types,
+        distance_m: distance,
+      });
+    } else {
+      out.set(s.stop_id, s);
+    }
+  }
+  return Array.from(out.values());
 }
 
 export async function searchStops(
@@ -93,15 +164,22 @@ export async function getStop(env: Env, stopId: string): Promise<Stop | null> {
 }
 
 export async function getRoutesForStop(env: Env, stopId: string): Promise<Route[]> {
+  const stopIds = await expandStopId(env, stopId);
+  const ph = stopIds.map((_, i) => `?${i + 1}`).join(",");
+  // GROUP BY route_short_name so each user-visible route appears once even
+  // when TransLink has many route_id variants for the same short_name.
+  // SQLite picks an arbitrary value for the non-aggregated columns, which
+  // is fine because variants share the human-meaningful fields.
   const { results } = await env.DB.prepare(
-    `SELECT DISTINCT r.route_id, r.route_short_name, r.route_long_name,
-            r.route_type, r.route_color, r.route_text_color
+    `SELECT MIN(r.route_id) AS route_id, r.route_short_name,
+            r.route_long_name, r.route_type, r.route_color, r.route_text_color
      FROM routes r
      JOIN trips t ON t.route_id = r.route_id
      JOIN stop_times st ON st.trip_id = t.trip_id
-     WHERE st.stop_id = ?1
+     WHERE st.stop_id IN (${ph})
+     GROUP BY r.route_short_name
      ORDER BY r.route_short_name`
-  ).bind(stopId).all<Route>();
+  ).bind(...stopIds).all<Route>();
   return results ?? [];
 }
 
@@ -459,6 +537,7 @@ export async function getRoute(env: Env, routeId: string): Promise<Route | null>
 
 interface ScheduledRow {
   trip_id: string;
+  stop_id: string;
   route_id: string;
   route_short_name: string | null;
   route_long_name: string | null;
@@ -474,6 +553,8 @@ export async function getDepartures(
   windowMinutes: number,
   limit: number,
 ): Promise<Departure[]> {
+  const stopIds = await expandStopId(env, stopId);
+
   const now = new Date();
   // GTFS times use the service day's noon as anchor — a service day extends
   // past midnight as e.g. 25:30:00. We look up today + yesterday's services
@@ -486,7 +567,7 @@ export async function getDepartures(
   const horizonMs = windowMinutes * 60 * 1000;
   const nowMs = now.getTime();
 
-  const rows = await fetchScheduledRows(env, stopId, [...activeToday, ...activeYesterday]);
+  const rows = await fetchScheduledRows(env, stopIds, [...activeToday, ...activeYesterday]);
 
   const tripUpdates = await getTripUpdates(env).catch(() => new Map());
   const yesterdayDate = offsetDate(now, -1);
@@ -498,7 +579,9 @@ export async function getDepartures(
 
     const tu = tripUpdates.get(r.trip_id);
     const isCancelled = tu?.schedule_relationship === 3;
-    const stuMatch = tu?.stop_time_updates.find(s => s.stop_id === stopId);
+    // Match the RT update against the specific platform stop the trip touches,
+    // not the user's queried id (which may be a station aggregating many).
+    const stuMatch = tu?.stop_time_updates.find(s => s.stop_id === r.stop_id);
     const delaySec = stuMatch?.departure_delay ?? stuMatch?.arrival_delay ?? null;
 
     out.push({
@@ -540,22 +623,24 @@ export async function getDepartures(
 
 async function fetchScheduledRows(
   env: Env,
-  stopId: string,
+  stopIds: string[],
   serviceIds: string[],
 ): Promise<ScheduledRow[]> {
-  if (serviceIds.length === 0) return [];
-  const placeholders = serviceIds.map((_, i) => `?${i + 2}`).join(",");
+  if (stopIds.length === 0 || serviceIds.length === 0) return [];
+  const stopPh = stopIds.map((_, i) => `?${i + 1}`).join(",");
+  const serviceOff = stopIds.length + 1;
+  const servicePh = serviceIds.map((_, i) => `?${i + serviceOff}`).join(",");
   const { results } = await env.DB.prepare(
-    `SELECT st.trip_id, t.route_id,
+    `SELECT st.trip_id, st.stop_id, t.route_id,
             r.route_short_name, r.route_long_name, r.route_type,
             t.trip_headsign, st.departure_time, t.service_id
      FROM stop_times st
      JOIN trips t ON t.trip_id = st.trip_id
      JOIN routes r ON r.route_id = t.route_id
-     WHERE st.stop_id = ?1
-       AND t.service_id IN (${placeholders})
+     WHERE st.stop_id IN (${stopPh})
+       AND t.service_id IN (${servicePh})
        AND st.pickup_type != 1`
-  ).bind(stopId, ...serviceIds).all<ScheduledRow>();
+  ).bind(...stopIds, ...serviceIds).all<ScheduledRow>();
   return results ?? [];
 }
 
