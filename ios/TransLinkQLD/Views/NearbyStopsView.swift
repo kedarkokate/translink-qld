@@ -17,6 +17,9 @@ struct NearbyStopsView: View {
     @AppStorage(TilePosition.storageKey) private var tilePositionRaw: String = TilePosition.defaultValue.rawValue
     @AppStorage(TileOrientation.storageKey) private var tileOrientationRaw: String = TileOrientation.defaultValue.rawValue
     @AppStorage(MapTileOrder.storageKey) private var tileOrderRaw: String = MapTileOrder.defaultRaw
+    @AppStorage("show_buses_v1") private var showBuses: Bool = true
+    @AppStorage("show_trains_v1") private var showTrains: Bool = true
+    @AppStorage("show_ferries_v1") private var showFerries: Bool = true
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var fetchTask: Task<Void, Never>?
     @State private var cameraPosition: MapCameraPosition = .userLocation(
@@ -124,8 +127,11 @@ struct NearbyStopsView: View {
     private var mapContent: some MapContent {
         UserAnnotation()
         // Render the focused stop separately so it doesn't double up under
-        // the highlighted annotation; everything else stays as a regular Marker.
-        ForEach(stops.filter { $0.stopId != focusedStop?.stopId }) { stop in
+        // the highlighted annotation; everything else stays as a regular Marker,
+        // with mode filters applied.
+        ForEach(stops.filter {
+            isModeVisible($0) && $0.stopId != focusedStop?.stopId
+        }) { stop in
             marker(for: stop)
         }
         if let focused = focusedStop {
@@ -145,6 +151,15 @@ struct NearbyStopsView: View {
                coordinate: stop.coordinate)
             .tint(stop.modeTint)
             .tag(stop)
+    }
+
+    /// A stop is hidden by the user's mode filters. Priority matches the pin
+    /// styling (ferry → rail → bus) so a multi-mode stop is filtered by the
+    /// same mode the user sees it as.
+    private func isModeVisible(_ stop: NearbyStop) -> Bool {
+        if stop.isFerry { return showFerries }
+        if stop.isRail  { return showTrains }
+        return showBuses
     }
 
     // MARK: Overlays
@@ -184,6 +199,17 @@ struct NearbyStopsView: View {
                 customizeShown = true
             } label: {
                 Label("Reorder tiles…", systemImage: "list.bullet.rectangle")
+            }
+            Section("Show on map") {
+                Toggle(isOn: $showBuses) {
+                    Label("Buses", systemImage: "bus.fill")
+                }
+                Toggle(isOn: $showTrains) {
+                    Label("Trains", systemImage: "train.side.front.car")
+                }
+                Toggle(isOn: $showFerries) {
+                    Label("Ferries", systemImage: "ferry.fill")
+                }
             }
         }
     }
