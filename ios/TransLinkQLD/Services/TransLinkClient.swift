@@ -61,6 +61,17 @@ final class TransLinkClient {
         return try await get(url, as: Resp.self).departures
     }
 
+    func schoolRoutesNear(
+        lat: Double, lon: Double, radiusM: Int, limit: Int = 25,
+    ) async throws -> [SchoolRouteMatch] {
+        struct Resp: Decodable { let matches: [SchoolRouteMatch] }
+        let url = try makeURL("/v1/routes/schools", query: [
+            "lat": "\(lat)", "lon": "\(lon)",
+            "radius_m": "\(radiusM)", "limit": "\(limit)",
+        ])
+        return try await get(url, as: Resp.self).matches
+    }
+
     func routeStops(shortName: String) async throws -> RouteStopsResponse {
         let url = try makeURL("/v1/routes/\(shortName)/stops")
         return try await get(url, as: RouteStopsResponse.self)

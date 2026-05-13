@@ -4,7 +4,7 @@ import type { Env } from "./types";
 import {
   findNearbyStops, getStop, getRoutesForStop,
   getRoute, getDepartures, findNearestStopForRoute, searchStops,
-  planJourney, getStopsForRoute,
+  planJourney, getStopsForRoute, findSchoolRoutesNear,
 } from "./queries";
 import { getVehiclePositions } from "./gtfsRt";
 
@@ -62,6 +62,19 @@ app.get("/v1/stops/:stop_id/departures", async c => {
   return c.json({
     stop_id: stopId,
     departures: await getDepartures(c.env, stopId, windowMin, limit),
+  });
+});
+
+app.get("/v1/routes/schools", async c => {
+  const lat = Number(c.req.query("lat"));
+  const lon = Number(c.req.query("lon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return c.json({ error: "lat and lon required" }, 400);
+  }
+  const radiusM = Math.min(Math.max(Number(c.req.query("radius_m") ?? 1000), 200), 5000);
+  const limit = Math.min(Number(c.req.query("limit") ?? 25), 50);
+  return c.json({
+    matches: await findSchoolRoutesNear(c.env, lat, lon, radiusM, limit),
   });
 });
 

@@ -306,6 +306,104 @@ export async function getStopsForRoute(
   };
 }
 
+// -------------------------------------------------------------------------
+// School routes near a location.
+// TransLink doesn't tag school services at the route level — instead it
+// creates per-school trip variants on regular bus routes, with the school's
+// name as the trip_headsign (e.g. "Stuartholme College", "Carina State
+// School"). The match below is a heuristic on that headsign.
+// -------------------------------------------------------------------------
+
+export interface SchoolRouteMatch {
+  route_short_name: string;
+  route_long_name: string | null;
+  route_type: number;
+  school_headsign: string;
+  nearest_stop: StopWithDistance;
+}
+
+interface SchoolRouteRow {
+  route_short_name: string;
+  route_long_name: string | null;
+  route_type: number;
+  trip_headsign: string;
+  stop_id: string;
+  stop_code: string | null;
+  stop_name: string;
+  stop_lat: number;
+  stop_lon: number;
+  location_type: number;
+  parent_station: string | null;
+  platform_code: string | null;
+  route_types: string | null;
+}
+
+export async function findSchoolRoutesNear(
+  env: Env, lat: number, lon: number,
+  radiusM: number, limit: number,
+): Promise<SchoolRouteMatch[]> {
+  const bbox = boundingBox(lat, lon, radiusM);
+  // The patterns target headsigns that name an actual school/college rather
+  // than street addresses like "Suburb, College Ave" or "X, School Rd".
+  const { results } = await env.DB.prepare(
+    `WITH school_trips AS (
+       SELECT t.trip_id, t.trip_headsign,
+              r.route_short_name, r.route_long_name, r.route_type
+       FROM trips t
+       JOIN routes r ON r.route_id = t.route_id
+       WHERE t.trip_headsign LIKE '%School' COLLATE NOCASE
+          OR t.trip_headsign LIKE '%College' COLLATE NOCASE
+          OR t.trip_headsign LIKE '%Grammar' COLLATE NOCASE
+          OR t.trip_headsign LIKE '%Academy' COLLATE NOCASE
+          OR t.trip_headsign LIKE '%School,%' COLLATE NOCASE
+          OR t.trip_headsign LIKE '%College,%' COLLATE NOCASE
+          OR LOWER(t.trip_headsign) LIKE '%state school%'
+          OR LOWER(t.trip_headsign) LIKE '%state high%'
+     )
+     SELECT DISTINCT
+       st.route_short_name, st.route_long_name, st.route_type,
+       st.trip_headsign,
+       s.stop_id, s.stop_code, s.stop_name, s.stop_lat, s.stop_lon,
+       s.location_type, s.parent_station, s.platform_code, s.route_types
+     FROM school_trips st
+     JOIN stop_times stm ON stm.trip_id = st.trip_id
+     JOIN stops s ON s.stop_id = stm.stop_id
+     WHERE s.stop_lat BETWEEN ?1 AND ?2
+       AND s.stop_lon BETWEEN ?3 AND ?4
+       AND s.location_type = 0`
+  ).bind(bbox.minLat, bbox.maxLat, bbox.minLon, bbox.maxLon).all<SchoolRouteRow>();
+
+  if (!results || results.length === 0) return [];
+
+  // Group by (route_short_name, school_headsign), keep the closest stop.
+  const grouped = new Map<string, SchoolRouteMatch>();
+  for (const r of results) {
+    const distance = haversineMeters(lat, lon, r.stop_lat, r.stop_lon);
+    if (distance > radiusM) continue;
+    const key = `${r.route_short_name}|${r.trip_headsign}`;
+    const existing = grouped.get(key);
+    if (!existing || distance < existing.nearest_stop.distance_m) {
+      grouped.set(key, {
+        route_short_name: r.route_short_name,
+        route_long_name: r.route_long_name,
+        route_type: r.route_type,
+        school_headsign: r.trip_headsign,
+        nearest_stop: {
+          stop_id: r.stop_id, stop_code: r.stop_code, stop_name: r.stop_name,
+          stop_lat: r.stop_lat, stop_lon: r.stop_lon,
+          location_type: r.location_type, parent_station: r.parent_station,
+          platform_code: r.platform_code, route_types: r.route_types,
+          distance_m: distance,
+        },
+      });
+    }
+  }
+
+  return Array.from(grouped.values())
+    .sort((a, b) => a.nearest_stop.distance_m - b.nearest_stop.distance_m)
+    .slice(0, limit);
+}
+
 export async function findNearestStopForRoute(
   env: Env, shortName: string,
   userLat: number, userLon: number,

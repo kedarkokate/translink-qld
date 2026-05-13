@@ -307,6 +307,24 @@ struct RouteStop: Codable, Identifiable {
     }
 }
 
+struct SchoolRouteMatch: Codable, Identifiable {
+    let routeShortName: String
+    let routeLongName: String?
+    let routeType: Int
+    let schoolHeadsign: String
+    let nearestStop: NearbyStop
+
+    var id: String { "\(routeShortName)|\(schoolHeadsign)" }
+
+    enum CodingKeys: String, CodingKey {
+        case routeShortName = "route_short_name"
+        case routeLongName = "route_long_name"
+        case routeType = "route_type"
+        case schoolHeadsign = "school_headsign"
+        case nearestStop = "nearest_stop"
+    }
+}
+
 struct RouteNearestStop: Codable {
     let routeShortName: String
     let routeIds: [String]
