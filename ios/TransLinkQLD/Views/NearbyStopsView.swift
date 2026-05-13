@@ -11,8 +11,10 @@ struct NearbyStopsView: View {
     @State private var sheetShown = false
     @State private var routeLookupShown = false
     @State private var directionsShown = false
+    @State private var customizeShown = false
     @State private var focusedStop: NearbyStop?
     @State private var focusedRoute: String?
+    @AppStorage(MapTileOrder.storageKey) private var tileOrderRaw: String = MapTileOrder.defaultRaw
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var fetchTask: Task<Void, Never>?
     @State private var cameraPosition: MapCameraPosition = .userLocation(
@@ -49,6 +51,10 @@ struct NearbyStopsView: View {
                     DirectionsView()
                         .presentationDetents([.medium, .large])
                 }
+                .sheet(isPresented: $customizeShown) {
+                    TilesCustomizationView(rawOrder: $tileOrderRaw)
+                        .presentationDetents([.medium, .large])
+                }
         }
     }
 
@@ -69,9 +75,9 @@ struct NearbyStopsView: View {
         }
         .overlay(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 8) {
-                routePill
-                directionsPill
-                homePill
+                ForEach(MapTileOrder.decode(tileOrderRaw)) { tile in
+                    tilePill(for: tile)
+                }
                 if let route = focusedRoute {
                     clearFocusPill(route)
                         .transition(.move(edge: .leading).combined(with: .opacity))
@@ -126,52 +132,39 @@ struct NearbyStopsView: View {
 
     // MARK: Overlays
 
-    private var routePill: some View {
+    private func tilePill(for tile: MapTileKind) -> some View {
         Button {
-            routeLookupShown = true
+            handleTileTap(tile)
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                Text("Route").fontWeight(.semibold)
+                Image(systemName: tile.iconName)
+                if !tile.iconOnlyOnMap {
+                    Text(tile.label).fontWeight(.semibold)
+                }
             }
             .font(.subheadline)
-            .padding(.horizontal, 14).padding(.vertical, 10)
+            .padding(.horizontal, tile.iconOnlyOnMap ? 11 : 14)
+            .padding(.vertical, 10)
             .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(tile.label)
+        .contextMenu {
+            Button {
+                customizeShown = true
+            } label: {
+                Label("Customize layout…", systemImage: "slider.horizontal.3")
+            }
+        }
     }
 
-    private var directionsPill: some View {
-        Button {
-            directionsShown = true
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                Text("Directions").fontWeight(.semibold)
-            }
-            .font(.subheadline)
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
+    private func handleTileTap(_ tile: MapTileKind) {
+        switch tile {
+        case .home: resetToHome()
+        case .directions: directionsShown = true
+        case .route: routeLookupShown = true
         }
-        .buttonStyle(.plain)
-    }
-
-    private var homePill: some View {
-        Button {
-            resetToHome()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "house.fill")
-                Text("Home").fontWeight(.semibold)
-            }
-            .font(.subheadline)
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
-        }
-        .buttonStyle(.plain)
     }
 
     private func resetToHome() {
