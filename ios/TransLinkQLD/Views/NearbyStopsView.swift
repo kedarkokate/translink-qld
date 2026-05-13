@@ -14,6 +14,7 @@ struct NearbyStopsView: View {
     @State private var focusedStop: NearbyStop?
     @State private var focusedRoute: String?
     @AppStorage(TilePosition.storageKey) private var tilePositionRaw: String = TilePosition.defaultValue.rawValue
+    @AppStorage(TileOrientation.storageKey) private var tileOrientationRaw: String = TileOrientation.defaultValue.rawValue
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var fetchTask: Task<Void, Never>?
     @State private var cameraPosition: MapCameraPosition = .userLocation(
@@ -69,26 +70,48 @@ struct NearbyStopsView: View {
             scheduleReload()
         }
         .overlay(alignment: tilePosition.alignment) {
+            tileStack
+                .padding(tilePosition.edgeInsets)
+                .animation(.spring(duration: 0.3), value: focusedRoute)
+                .animation(.spring(duration: 0.3), value: tilePosition)
+                .animation(.spring(duration: 0.3), value: tileOrientation)
+        }
+    }
+
+    @ViewBuilder
+    private var tileStack: some View {
+        switch tileOrientation {
+        case .vertical:
             VStack(alignment: tilePosition.stackAlignment, spacing: 8) {
-                ForEach(MapTileKind.allCases) { tile in
-                    tilePill(for: tile)
-                }
-                if let route = focusedRoute {
-                    clearFocusPill(route)
-                        .transition(
-                            .move(edge: tilePosition.transitionEdge)
-                            .combined(with: .opacity),
-                        )
-                }
+                tilesContent
             }
-            .padding(tilePosition.edgeInsets)
-            .animation(.spring(duration: 0.3), value: focusedRoute)
-            .animation(.spring(duration: 0.3), value: tilePosition)
+        case .horizontal:
+            HStack(alignment: .center, spacing: 8) {
+                tilesContent
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tilesContent: some View {
+        ForEach(MapTileKind.allCases) { tile in
+            tilePill(for: tile)
+        }
+        if let route = focusedRoute {
+            clearFocusPill(route)
+                .transition(
+                    .move(edge: tilePosition.transitionEdge)
+                    .combined(with: .opacity),
+                )
         }
     }
 
     private var tilePosition: TilePosition {
         TilePosition(rawValue: tilePositionRaw) ?? .defaultValue
+    }
+
+    private var tileOrientation: TileOrientation {
+        TileOrientation(rawValue: tileOrientationRaw) ?? .defaultValue
     }
 
     @MapContentBuilder
@@ -157,6 +180,12 @@ struct NearbyStopsView: View {
                 ForEach(TilePosition.allCases) { pos in
                     Label(pos.label, systemImage: pos.iconName)
                         .tag(pos.rawValue)
+                }
+            }
+            Picker("Layout", selection: $tileOrientationRaw) {
+                ForEach(TileOrientation.allCases) { o in
+                    Label(o.label, systemImage: o.iconName)
+                        .tag(o.rawValue)
                 }
             }
         }

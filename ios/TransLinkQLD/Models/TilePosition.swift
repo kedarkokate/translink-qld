@@ -1,6 +1,32 @@
 import Foundation
 import SwiftUI
 
+/// Whether the action tiles stack as a column or a row.
+enum TileOrientation: String, CaseIterable, Codable, Identifiable {
+    case vertical
+    case horizontal
+
+    static let storageKey = "map_tile_orientation_v1"
+    static let defaultValue: TileOrientation = .vertical
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .vertical: return "Vertical"
+        case .horizontal: return "Horizontal"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .vertical: return "rectangle.split.1x3"
+        case .horizontal: return "rectangle.split.3x1"
+        }
+    }
+}
+
+
 /// Where the action-tile stack floats on the map. User-selectable via the
 /// long-press menu; persisted in `@AppStorage`.
 enum TilePosition: String, CaseIterable, Codable, Identifiable {
