@@ -11,10 +11,12 @@ struct NearbyStopsView: View {
     @State private var sheetShown = false
     @State private var routeLookupShown = false
     @State private var directionsShown = false
+    @State private var customizeShown = false
     @State private var focusedStop: NearbyStop?
     @State private var focusedRoute: String?
     @AppStorage(TilePosition.storageKey) private var tilePositionRaw: String = TilePosition.defaultValue.rawValue
     @AppStorage(TileOrientation.storageKey) private var tileOrientationRaw: String = TileOrientation.defaultValue.rawValue
+    @AppStorage(MapTileOrder.storageKey) private var tileOrderRaw: String = MapTileOrder.defaultRaw
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var fetchTask: Task<Void, Never>?
     @State private var cameraPosition: MapCameraPosition = .userLocation(
@@ -49,6 +51,10 @@ struct NearbyStopsView: View {
                 }
                 .sheet(isPresented: $directionsShown) {
                     DirectionsView()
+                        .presentationDetents([.medium, .large])
+                }
+                .sheet(isPresented: $customizeShown) {
+                    TilesCustomizationView(rawOrder: $tileOrderRaw)
                         .presentationDetents([.medium, .large])
                 }
         }
@@ -94,7 +100,7 @@ struct NearbyStopsView: View {
 
     @ViewBuilder
     private var tilesContent: some View {
-        ForEach(MapTileKind.allCases) { tile in
+        ForEach(MapTileOrder.decode(tileOrderRaw)) { tile in
             tilePill(for: tile)
         }
         if let route = focusedRoute {
@@ -187,6 +193,11 @@ struct NearbyStopsView: View {
                     Label(o.label, systemImage: o.iconName)
                         .tag(o.rawValue)
                 }
+            }
+            Button {
+                customizeShown = true
+            } label: {
+                Label("Reorder tiles…", systemImage: "list.bullet.rectangle")
             }
         }
     }

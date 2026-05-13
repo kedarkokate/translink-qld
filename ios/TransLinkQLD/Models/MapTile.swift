@@ -34,3 +34,32 @@ enum MapTileKind: String, Identifiable, CaseIterable, Codable {
         }
     }
 }
+
+enum MapTileOrder {
+    /// Default tile sequence on first launch.
+    static let defaultOrder: [MapTileKind] = [.home, .directions, .route]
+
+    static let storageKey = "map_tile_order_v1"
+    static let defaultRaw: String = defaultOrder.map(\.rawValue).joined(separator: ",")
+
+    /// Decode a comma-separated raw string into a tile sequence, tolerant of
+    /// missing or unknown entries: anything missing is appended in declaration
+    /// order so new tiles auto-appear at the bottom for existing users.
+    static func decode(_ raw: String) -> [MapTileKind] {
+        let parsed = raw.split(separator: ",")
+            .compactMap { MapTileKind(rawValue: String($0)) }
+        var seen = Set<MapTileKind>()
+        var ordered: [MapTileKind] = []
+        for t in parsed where !seen.contains(t) {
+            ordered.append(t); seen.insert(t)
+        }
+        for t in MapTileKind.allCases where !seen.contains(t) {
+            ordered.append(t)
+        }
+        return ordered
+    }
+
+    static func encode(_ order: [MapTileKind]) -> String {
+        order.map(\.rawValue).joined(separator: ",")
+    }
+}
