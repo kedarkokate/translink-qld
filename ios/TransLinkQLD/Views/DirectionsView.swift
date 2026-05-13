@@ -9,7 +9,7 @@ struct DirectionsView: View {
     @State private var from: SearchLocation?
     @State private var to: SearchLocation?
     @State private var pickerKind: PickerKind?
-    @State private var options: [TransitOption] = []
+    @State private var options: [JourneyOption] = []
     @State private var searching = false
     @State private var error: String?
 
@@ -189,12 +189,22 @@ struct DirectionsView: View {
     }
 
     @ViewBuilder
-    private func optionRow(_ option: TransitOption, isBest: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(formattedDuration(option.totalDuration))
-                    .font(.title2.weight(.bold))
+    private func optionRow(_ option: JourneyOption, isBest: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                routeBadge(option.route)
+                Text("\(option.totalMinutes) min")
+                    .font(.title3.weight(.bold))
                     .monospacedDigit()
+                if option.isRealtime {
+                    HStack(spacing: 3) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                        Text("Live")
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                }
+                Spacer()
                 if isBest {
                     Text("Best")
                         .font(.caption.weight(.semibold))
@@ -202,56 +212,93 @@ struct DirectionsView: View {
                         .foregroundStyle(.white)
                         .background(.green, in: Capsule())
                 }
-                Spacer()
-                Image(systemName: "arrow.right.circle.fill")
-                    .foregroundStyle(.blue)
             }
 
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.branch")
+            if let headsign = option.headsign {
+                Text("→ \(headsign)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                journeyStep(
+                    icon: "figure.walk", iconColor: .secondary,
+                    primary: "Walk \(option.walkToMinutes) min to \(option.board.stopName)",
+                    secondary: "\(option.board.walkDistanceM) m",
+                )
+                journeyStep(
+                    icon: routeIcon(option.route.routeType),
+                    iconColor: routeColor(option.route.routeType),
+                    primary: "Catch \(option.route.displayName) at \(formatTime(option.board.effectiveTime))",
+                    secondary: "Ride \(option.transitMinutes) min → arrive \(formatTime(option.alight.effectiveTime))",
+                )
+                journeyStep(
+                    icon: "figure.walk", iconColor: .secondary,
+                    primary: "Walk \(option.walkFromMinutes) min from \(option.alight.stopName)",
+                    secondary: "\(option.alight.walkDistanceM) m",
+                )
+            }
+
+            if let delay = option.delaySeconds, abs(delay) >= 60 {
+                Text(delay > 0
+                     ? "Running \(delay / 60) min late"
+                     : "Running \(abs(delay) / 60) min early")
                     .font(.caption)
-                Text(option.changes == 0
-                     ? "No changes"
-                     : "\(option.changes) change\(option.changes == 1 ? "" : "s")")
-                    .font(.caption)
-            }
-            .foregroundStyle(.secondary)
-
-            if !option.advisoryNotices.isEmpty {
-                ForEach(option.advisoryNotices, id: \.self) { notice in
-                    Text(notice).font(.caption2).foregroundStyle(.orange)
-                }
-            }
-
-            if !option.steps.isEmpty {
-                Divider().padding(.vertical, 2)
-                ForEach(option.steps.prefix(4)) { step in
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: stepIcon(step.transportType))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18)
-                        Text(step.instructions.isEmpty
-                             ? "Continue \(Int(step.distance)) m"
-                             : step.instructions)
-                            .font(.caption)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                if option.steps.count > 4 {
-                    Text("…and \(option.steps.count - 4) more steps")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
+                    .foregroundStyle(delay > 0 ? .orange : .green)
             }
         }
     }
 
-    private func stepIcon(_ type: MKDirectionsTransportType) -> String {
-        switch type {
-        case .walking: "figure.walk"
-        case .transit: "bus.fill"
-        case .automobile: "car.fill"
-        default: "arrow.right"
+    private func journeyStep(
+        icon: String, iconColor: Color,
+        primary: String, secondary: String,
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(iconColor)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(primary).font(.subheadline)
+                Text(secondary).font(.caption).foregroundStyle(.secondary)
+            }
         }
+    }
+
+    private func routeBadge(_ route: JourneyRoute) -> some View {
+        Text(route.displayName)
+            .font(.system(size: 14, weight: .bold, design: .rounded))
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .foregroundStyle(.white)
+            .background(routeColor(route.routeType), in: RoundedRectangle(cornerRadius: 8))
+            .frame(minWidth: 48)
+    }
+
+    private func routeColor(_ rt: Int) -> Color {
+        switch RouteType(rawValue: rt) {
+        case .bus: return .blue
+        case .rail, .subway: return .indigo
+        case .ferry: return .cyan
+        case .tram: return .pink
+        default: return .gray
+        }
+    }
+
+    private func routeIcon(_ rt: Int) -> String {
+        switch RouteType(rawValue: rt) {
+        case .bus: return "bus.fill"
+        case .rail, .subway: return "train.side.front.car"
+        case .ferry: return "ferry.fill"
+        case .tram: return "tram.fill"
+        default: return "bus.fill"
+        }
+    }
+
+    private func formatTime(_ d: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.timeStyle = .short
+        fmt.dateStyle = .none
+        return fmt.string(from: d)
     }
 
     // MARK: Search
@@ -267,7 +314,7 @@ struct DirectionsView: View {
         searching = true; error = nil; options = []
         defer { searching = false }
         do {
-            let results = try await TransitDirectionsService.transitOptions(
+            let results = try await TransLinkClient.shared.planJourney(
                 from: f.coordinate, to: t.coordinate,
             )
             if results.isEmpty {
@@ -275,25 +322,17 @@ struct DirectionsView: View {
             } else {
                 options = results
             }
-        } catch let mkError as MKError {
-            switch mkError.code {
-            case .directionsNotFound, .placemarkNotFound:
-                self.error = noRoutesMessage
-            case .serverFailure, .loadingThrottled:
-                self.error = "Apple Maps is unavailable right now. Try again or open the trip in Apple Maps below."
-            default:
-                self.error = "Apple Maps returned an error (\(mkError.code.rawValue)).\n\n\(noRoutesMessage)"
-            }
         } catch {
-            self.error = error.localizedDescription
+            self.error = "Couldn't plan a journey: \(error.localizedDescription)\n\n\(noRoutesMessage)"
         }
     }
 
     private let noRoutesMessage = """
-    Apple's public transit API didn't return a route in-app for this trip. \
-    This is common — the Apple Maps app itself has richer data and usually finds one.
+    No direct transit routes were found within ~500 m walking distance and \
+    the next 90 minutes.
 
-    Tap “Open in Apple Maps” below for full step-by-step directions.
+    This version only finds single-trip journeys (no transfers). For longer \
+    or transfer-needing trips, open Apple Maps below.
     """
 
     private func openInAppleMaps() {
@@ -304,10 +343,4 @@ struct DirectionsView: View {
         )
     }
 
-    private func formattedDuration(_ secs: TimeInterval) -> String {
-        let m = Int(secs / 60)
-        if m < 60 { return "\(m) min" }
-        let h = m / 60, r = m % 60
-        return r == 0 ? "\(h) h" : "\(h) h \(r) min"
-    }
 }

@@ -144,6 +144,199 @@ export async function findNearestStopForRoute(
   };
 }
 
+// -------------------------------------------------------------------------
+// Direct-route journey planner.
+// Find single-trip transit journeys whose board stop is within walking
+// distance of `from` and alight stop within walking distance of `to`. No
+// transfers (v1). Sorted by total journey time (walking + waiting + transit).
+// -------------------------------------------------------------------------
+
+const WALK_SPEED_M_PER_MIN = 80;  // ~5 km/h, typical urban walking pace
+
+export interface JourneyOption {
+  total_minutes: number;
+  walk_to_minutes: number;
+  transit_minutes: number;
+  walk_from_minutes: number;
+  route: {
+    route_id: string;
+    route_short_name: string | null;
+    route_long_name: string | null;
+    route_type: number;
+  };
+  trip_id: string;
+  headsign: string | null;
+  board: JourneyStopRef;
+  alight: JourneyStopRef;
+  is_realtime: boolean;
+  delay_seconds: number | null;
+}
+
+interface JourneyStopRef {
+  stop_id: string;
+  stop_name: string;
+  stop_lat: number;
+  stop_lon: number;
+  walk_distance_m: number;
+  scheduled_time: string;
+  predicted_time: string | null;
+}
+
+interface CandidateRow {
+  trip_id: string;
+  board_stop: string; board_time: string;
+  alight_stop: string; alight_time: string;
+  route_id: string; trip_headsign: string | null;
+  route_short_name: string | null; route_long_name: string | null;
+  route_type: number;
+}
+
+export async function planJourney(
+  env: Env,
+  fromLat: number, fromLon: number,
+  toLat: number, toLon: number,
+  windowMinutes: number,
+  walkRadiusM: number,
+  maxResults: number,
+): Promise<JourneyOption[]> {
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 15);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 15);
+  if (fromStops.length === 0 || toStops.length === 0) return [];
+
+  const now = new Date();
+  const dateStr = brisbaneDateISO(now).replaceAll("-", "");
+  const dowCol = dayOfWeekColumn(dateStr);
+
+  // Brisbane-local HH:MM:SS for "now" and "now + window", used to push the
+  // time-window filter down into SQL. GTFS times can exceed 24:00:00 for
+  // late-night trips so the upper bound is allowed to exceed 23:59:59.
+  const nowLocal = brisbaneClock(now);
+  const upper = clockPlusMinutes(nowLocal, windowMinutes);
+
+  // Param layout: ?1..?N = board stops, ?N+1..?N+M = alight stops,
+  // then dateStr, nowLocal, upper.
+  const boardPh = fromStops.map((_, i) => `?${i + 1}`).join(",");
+  const alightOff = fromStops.length + 1;
+  const alightPh = toStops.map((_, i) => `?${i + alightOff}`).join(",");
+  const dateIdx = alightOff + toStops.length;
+  const lowerIdx = dateIdx + 1;
+  const upperIdx = dateIdx + 2;
+
+  // Service-id filter is pushed into a subquery so we don't burn placeholders
+  // on the dozens of services active each day. v1 uses calendar only (no
+  // calendar_dates exceptions).
+  const sql = `
+    SELECT
+      sa.trip_id,
+      sa.stop_id AS board_stop, sa.departure_time AS board_time,
+      sb.stop_id AS alight_stop, sb.arrival_time AS alight_time,
+      t.route_id, t.trip_headsign,
+      r.route_short_name, r.route_long_name, r.route_type
+    FROM stop_times sa
+    JOIN stop_times sb
+      ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
+    JOIN trips t ON t.trip_id = sa.trip_id
+    JOIN routes r ON r.route_id = t.route_id
+    WHERE sa.stop_id IN (${boardPh})
+      AND sb.stop_id IN (${alightPh})
+      AND t.service_id IN (
+        SELECT service_id FROM calendar
+        WHERE start_date <= ?${dateIdx} AND end_date >= ?${dateIdx} AND ${dowCol} = 1
+      )
+      AND sa.departure_time BETWEEN ?${lowerIdx} AND ?${upperIdx}
+      AND sa.pickup_type != 1
+      AND sb.drop_off_type != 1
+    ORDER BY sa.departure_time
+    LIMIT 400
+  `;
+  const params = [
+    ...fromStops.map(s => s.stop_id),
+    ...toStops.map(s => s.stop_id),
+    dateStr, nowLocal, upper,
+  ];
+  const { results } = await env.DB.prepare(sql).bind(...params).all<CandidateRow>();
+  if (!results || results.length === 0) return [];
+
+  const tripUpdates = await getTripUpdates(env).catch(() => new Map());
+  const nowMs = now.getTime();
+  const windowMs = windowMinutes * 60_000;
+  const fromMap = new Map(fromStops.map(s => [s.stop_id, s]));
+  const toMap   = new Map(toStops.map(s => [s.stop_id, s]));
+
+  const candidates: JourneyOption[] = [];
+  for (const r of results) {
+    const boardMs = applyGtfsTime(now, r.board_time);
+    const alightMs = applyGtfsTime(now, r.alight_time);
+    if (boardMs < nowMs - 60_000) continue;            // already gone
+    if (boardMs > nowMs + windowMs) continue;          // beyond window
+    if (alightMs <= boardMs) continue;                 // sanity guard
+
+    const tu = tripUpdates.get(r.trip_id);
+    if (tu?.schedule_relationship === 3) continue;     // cancelled trip
+    const stu = tu?.stop_time_updates.find(s => s.stop_id === r.board_stop);
+    const delaySec = stu?.departure_delay ?? stu?.arrival_delay ?? null;
+
+    const predictedBoardMs = delaySec != null ? boardMs + delaySec * 1000 : boardMs;
+    const predictedAlightMs = delaySec != null ? alightMs + delaySec * 1000 : alightMs;
+
+    const boardStop = fromMap.get(r.board_stop)!;
+    const alightStop = toMap.get(r.alight_stop)!;
+    const walkToMin = boardStop.distance_m / WALK_SPEED_M_PER_MIN;
+    const walkFromMin = alightStop.distance_m / WALK_SPEED_M_PER_MIN;
+    const transitMin = (alightMs - boardMs) / 60_000;
+    if (transitMin < 1) continue;                       // ignore micro-rides
+
+    // Reject trips you couldn't physically reach walking
+    const minutesUntilBoard = (predictedBoardMs - nowMs) / 60_000;
+    if (minutesUntilBoard < walkToMin - 1) continue;
+
+    const totalMin = (predictedAlightMs - nowMs) / 60_000 + walkFromMin;
+
+    candidates.push({
+      total_minutes: Math.round(totalMin),
+      walk_to_minutes: Math.round(walkToMin),
+      transit_minutes: Math.round(transitMin),
+      walk_from_minutes: Math.round(walkFromMin),
+      route: {
+        route_id: r.route_id,
+        route_short_name: r.route_short_name,
+        route_long_name: r.route_long_name,
+        route_type: r.route_type,
+      },
+      trip_id: r.trip_id,
+      headsign: r.trip_headsign,
+      board: {
+        stop_id: boardStop.stop_id, stop_name: boardStop.stop_name,
+        stop_lat: boardStop.stop_lat, stop_lon: boardStop.stop_lon,
+        walk_distance_m: Math.round(boardStop.distance_m),
+        scheduled_time: new Date(boardMs).toISOString(),
+        predicted_time: delaySec != null ? new Date(predictedBoardMs).toISOString() : null,
+      },
+      alight: {
+        stop_id: alightStop.stop_id, stop_name: alightStop.stop_name,
+        stop_lat: alightStop.stop_lat, stop_lon: alightStop.stop_lon,
+        walk_distance_m: Math.round(alightStop.distance_m),
+        scheduled_time: new Date(alightMs).toISOString(),
+        predicted_time: delaySec != null ? new Date(predictedAlightMs).toISOString() : null,
+      },
+      is_realtime: tu != null,
+      delay_seconds: delaySec,
+    });
+  }
+
+  // Dedupe: same route, headsign, board+alight stops — keep earliest trip.
+  const seen = new Map<string, JourneyOption>();
+  for (const c of candidates) {
+    const key = `${c.route.route_id}|${c.headsign ?? ""}|${c.board.stop_id}|${c.alight.stop_id}`;
+    const existing = seen.get(key);
+    if (!existing || c.total_minutes < existing.total_minutes) seen.set(key, c);
+  }
+
+  return Array.from(seen.values())
+    .sort((a, b) => a.total_minutes - b.total_minutes)
+    .slice(0, maxResults);
+}
+
 export async function getRoute(env: Env, routeId: string): Promise<Route | null> {
   return env.DB.prepare(
     `SELECT route_id, route_short_name, route_long_name,
@@ -296,6 +489,31 @@ function serviceDate(now: Date, dayOffset: number): string {
 
 function offsetDate(d: Date, dayOffset: number): Date {
   return new Date(d.getTime() + dayOffset * 86_400_000);
+}
+
+const BRISBANE_CLOCK_FMT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: BRISBANE_TZ,
+  hour: "2-digit", minute: "2-digit", second: "2-digit",
+  hour12: false,
+});
+
+// "HH:MM:SS" for the Brisbane-local clock time of d (24-hour).
+function brisbaneClock(d: Date): string {
+  // en-GB returns "HH:MM:SS" but may use "24:00:00" at midnight in some
+  // locales; normalize a hypothetical "24:..." to "00:...".
+  const raw = BRISBANE_CLOCK_FMT.format(d);
+  return raw.startsWith("24:") ? `00:${raw.slice(3)}` : raw;
+}
+
+// Adds N minutes to an "HH:MM:SS" string and may overflow past 24:00:00 to
+// match GTFS's late-night convention (e.g. "25:30:00").
+function clockPlusMinutes(hms: string, minutes: number): string {
+  const [h, m, s] = hms.split(":").map(Number);
+  const totalSec = h * 3600 + m * 60 + s + minutes * 60;
+  const hh = Math.floor(totalSec / 3600);
+  const mm = Math.floor((totalSec % 3600) / 60);
+  const ss = totalSec % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
 // UTC ms for "midnight Brisbane on the Brisbane-local calendar date of baseDate",

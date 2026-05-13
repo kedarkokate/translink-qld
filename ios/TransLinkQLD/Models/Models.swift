@@ -168,6 +168,75 @@ struct StopDetail: Codable {
     let routes: [Route]
 }
 
+// MARK: - Journey planner
+
+struct JourneyOption: Codable, Identifiable {
+    let totalMinutes: Int
+    let walkToMinutes: Int
+    let transitMinutes: Int
+    let walkFromMinutes: Int
+    let route: JourneyRoute
+    let tripId: String
+    let headsign: String?
+    let board: JourneyStopRef
+    let alight: JourneyStopRef
+    let isRealtime: Bool
+    let delaySeconds: Int?
+
+    var id: String { "\(tripId)|\(board.stopId)|\(alight.stopId)" }
+
+    enum CodingKeys: String, CodingKey {
+        case totalMinutes = "total_minutes"
+        case walkToMinutes = "walk_to_minutes"
+        case transitMinutes = "transit_minutes"
+        case walkFromMinutes = "walk_from_minutes"
+        case route
+        case tripId = "trip_id"
+        case headsign
+        case board, alight
+        case isRealtime = "is_realtime"
+        case delaySeconds = "delay_seconds"
+    }
+}
+
+struct JourneyRoute: Codable, Hashable {
+    let routeId: String
+    let routeShortName: String?
+    let routeLongName: String?
+    let routeType: Int
+
+    var displayName: String { routeShortName ?? routeLongName ?? routeId }
+
+    enum CodingKeys: String, CodingKey {
+        case routeId = "route_id"
+        case routeShortName = "route_short_name"
+        case routeLongName = "route_long_name"
+        case routeType = "route_type"
+    }
+}
+
+struct JourneyStopRef: Codable, Hashable {
+    let stopId: String
+    let stopName: String
+    let stopLat: Double
+    let stopLon: Double
+    let walkDistanceM: Int
+    let scheduledTime: Date
+    let predictedTime: Date?
+
+    var effectiveTime: Date { predictedTime ?? scheduledTime }
+
+    enum CodingKeys: String, CodingKey {
+        case stopId = "stop_id"
+        case stopName = "stop_name"
+        case stopLat = "stop_lat"
+        case stopLon = "stop_lon"
+        case walkDistanceM = "walk_distance_m"
+        case scheduledTime = "scheduled_time"
+        case predictedTime = "predicted_time"
+    }
+}
+
 struct RouteNearestStop: Codable {
     let routeShortName: String
     let routeIds: [String]

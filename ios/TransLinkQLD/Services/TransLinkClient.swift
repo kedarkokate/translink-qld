@@ -61,6 +61,24 @@ final class TransLinkClient {
         return try await get(url, as: Resp.self).departures
     }
 
+    func planJourney(
+        from: CLLocationCoordinate2D,
+        to: CLLocationCoordinate2D,
+        windowMin: Int = 90,
+        walkM: Int = 500,
+        limit: Int = 12,
+    ) async throws -> [JourneyOption] {
+        struct Resp: Decodable { let options: [JourneyOption] }
+        let url = try makeURL("/v1/journey", query: [
+            "from_lat": "\(from.latitude)", "from_lon": "\(from.longitude)",
+            "to_lat":   "\(to.latitude)",   "to_lon":   "\(to.longitude)",
+            "window_min": "\(windowMin)",
+            "walk_m": "\(walkM)",
+            "limit": "\(limit)",
+        ])
+        return try await get(url, as: Resp.self).options
+    }
+
     func searchStops(
         query: String, near: CLLocationCoordinate2D? = nil, limit: Int = 10,
     ) async throws -> [NearbyStop] {

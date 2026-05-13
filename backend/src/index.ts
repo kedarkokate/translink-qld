@@ -4,6 +4,7 @@ import type { Env } from "./types";
 import {
   findNearbyStops, getStop, getRoutesForStop,
   getRoute, getDepartures, findNearestStopForRoute, searchStops,
+  planJourney,
 } from "./queries";
 import { getVehiclePositions } from "./gtfsRt";
 
@@ -78,6 +79,23 @@ app.get("/v1/routes/:route_id", async c => {
   const route = await getRoute(c.env, c.req.param("route_id"));
   if (!route) return c.json({ error: "not found" }, 404);
   return c.json({ route });
+});
+
+app.get("/v1/journey", async c => {
+  const fromLat = Number(c.req.query("from_lat"));
+  const fromLon = Number(c.req.query("from_lon"));
+  const toLat = Number(c.req.query("to_lat"));
+  const toLon = Number(c.req.query("to_lon"));
+  if (![fromLat, fromLon, toLat, toLon].every(Number.isFinite)) {
+    return c.json({ error: "from_lat, from_lon, to_lat, to_lon required" }, 400);
+  }
+  const windowMin = Math.min(Number(c.req.query("window_min") ?? 90), 180);
+  const walkRadiusM = Math.min(Number(c.req.query("walk_m") ?? 500), 800);
+  const limit = Math.min(Number(c.req.query("limit") ?? 12), 30);
+  const options = await planJourney(
+    c.env, fromLat, fromLon, toLat, toLon, windowMin, walkRadiusM, limit,
+  );
+  return c.json({ options });
 });
 
 app.get("/v1/vehicles", async c => {
