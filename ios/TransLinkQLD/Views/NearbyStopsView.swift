@@ -71,6 +71,7 @@ struct NearbyStopsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 routePill
                 directionsPill
+                homePill
                 if let route = focusedRoute {
                     clearFocusPill(route)
                         .transition(.move(edge: .leading).combined(with: .opacity))
@@ -155,6 +156,35 @@ struct NearbyStopsView: View {
             .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
+    }
+
+    private var homePill: some View {
+        Button {
+            resetToHome()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "house.fill")
+                Text("Home").fontWeight(.semibold)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func resetToHome() {
+        focusedStop = nil
+        focusedRoute = nil
+        selectedStop = nil
+        sheetShown = false
+        withAnimation {
+            cameraPosition = .userLocation(
+                followsHeading: false,
+                fallback: .region(Self.brisbaneFallback),
+            )
+        }
     }
 
     private func clearFocusPill(_ routeName: String) -> some View {
