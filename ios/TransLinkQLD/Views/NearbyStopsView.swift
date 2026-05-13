@@ -10,6 +10,8 @@ struct NearbyStopsView: View {
     @State private var selectedStop: NearbyStop?
     @State private var sheetShown = false
     @State private var routeLookupShown = false
+    @State private var focusedStop: NearbyStop?
+    @State private var focusedRoute: String?
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var fetchTask: Task<Void, Never>?
     @State private var cameraPosition: MapCameraPosition = .userLocation(
@@ -37,8 +39,10 @@ struct NearbyStopsView: View {
                     stopDetailSheet
                 }
                 .sheet(isPresented: $routeLookupShown) {
-                    RouteLookupView { stop, _ in focusOnRouteStop(stop) }
-                        .presentationDetents([.medium, .large])
+                    RouteLookupView { stop, routeName in
+                        focusOnRouteStop(stop, route: routeName)
+                    }
+                    .presentationDetents([.medium, .large])
                 }
         }
     }
@@ -59,17 +63,35 @@ struct NearbyStopsView: View {
             scheduleReload()
         }
         .overlay(alignment: .topLeading) {
-            routePill
-                .padding(.top, 10)
-                .padding(.leading, 12)
+            VStack(alignment: .leading, spacing: 8) {
+                routePill
+                if let route = focusedRoute {
+                    clearFocusPill(route)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+            }
+            .padding(.top, 10)
+            .padding(.leading, 12)
+            .animation(.spring(duration: 0.3), value: focusedRoute)
         }
     }
 
     @MapContentBuilder
     private var mapContent: some MapContent {
         UserAnnotation()
-        ForEach(stops) { stop in
+        // Render the focused stop separately so it doesn't double up under
+        // the highlighted annotation; everything else stays as a regular Marker.
+        ForEach(stops.filter { $0.stopId != focusedStop?.stopId }) { stop in
             marker(for: stop)
+        }
+        if let focused = focusedStop {
+            Annotation(focused.stopName, coordinate: focused.coordinate, anchor: .center) {
+                FocusedStopMarker(
+                    routeBadge: focusedRoute,
+                    isFerry: focused.isFerry,
+                )
+            }
+            .tag(focused)
         }
     }
 
@@ -95,6 +117,23 @@ struct NearbyStopsView: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func clearFocusPill(_ routeName: String) -> some View {
+        Button {
+            resetFocus()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "xmark.circle.fill")
+                Text("Route \(routeName)").fontWeight(.semibold)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .foregroundStyle(.white)
+            .background(.green, in: Capsule())
+            .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -126,7 +165,9 @@ struct NearbyStopsView: View {
 
     // MARK: Camera focus
 
-    private func focusOnRouteStop(_ stop: NearbyStop) {
+    private func focusOnRouteStop(_ stop: NearbyStop, route: String) {
+        focusedStop = stop
+        focusedRoute = route
         let region: MKCoordinateRegion
         if let user = locationManager.lastLocation?.coordinate {
             region = regionFitting([user, stop.coordinate])
@@ -137,6 +178,17 @@ struct NearbyStopsView: View {
             )
         }
         withAnimation { cameraPosition = .region(region) }
+    }
+
+    private func resetFocus() {
+        focusedStop = nil
+        focusedRoute = nil
+        withAnimation {
+            cameraPosition = .userLocation(
+                followsHeading: false,
+                fallback: .region(Self.brisbaneFallback),
+            )
+        }
     }
 
     private func regionFitting(_ coords: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
@@ -196,3 +248,42 @@ struct NearbyStopsView: View {
         }
     }
 }
+
+/// Pulsing green badge for the stop returned by a route lookup. Sits above the
+/// regular marker layer so it reads as "this is the one you searched for".
+private struct FocusedStopMarker: View {
+    let routeBadge: String?
+    let isFerry: Bool
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.green, lineWidth: 3)
+                .frame(width: 44, height: 44)
+                .scaleEffect(pulse ? 1.7 : 1)
+                .opacity(pulse ? 0 : 0.8)
+                .animation(
+                    .easeOut(duration: 1.6).repeatForever(autoreverses: false),
+                    value: pulse,
+                )
+
+            VStack(spacing: 1) {
+                Image(systemName: isFerry ? "ferry.fill" : "bus.fill")
+                    .font(.system(size: 13, weight: .bold))
+                if let badge = routeBadge {
+                    Text(badge)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(Circle().fill(.green))
+            .overlay(Circle().stroke(.white, lineWidth: 2.5))
+            .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+        }
+        .onAppear { pulse = true }
+    }
+}
+
