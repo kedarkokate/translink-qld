@@ -55,6 +55,45 @@ export async function getRoutesForStop(env: Env, stopId: string): Promise<Route[
   return results ?? [];
 }
 
+export async function findNearestStopForRoute(
+  env: Env, shortName: string,
+  userLat: number, userLon: number,
+): Promise<{
+  route_short_name: string;
+  route_ids: string[];
+  nearest_stop: StopWithDistance;
+} | null> {
+  const { results: stops } = await env.DB.prepare(
+    `SELECT DISTINCT s.stop_id, s.stop_code, s.stop_name,
+            s.stop_lat, s.stop_lon, s.location_type,
+            s.parent_station, s.platform_code, s.route_types
+     FROM stops s
+     JOIN stop_times st ON st.stop_id = s.stop_id
+     JOIN trips t ON t.trip_id = st.trip_id
+     JOIN routes r ON r.route_id = t.route_id
+     WHERE r.route_short_name = ?1 COLLATE NOCASE
+       AND s.location_type = 0`
+  ).bind(shortName).all<Stop>();
+
+  if (!stops || stops.length === 0) return null;
+
+  let nearest: StopWithDistance | null = null;
+  for (const s of stops) {
+    const d = haversineMeters(userLat, userLon, s.stop_lat, s.stop_lon);
+    if (!nearest || d < nearest.distance_m) nearest = { ...s, distance_m: d };
+  }
+
+  const { results: routes } = await env.DB.prepare(
+    `SELECT route_id FROM routes WHERE route_short_name = ?1 COLLATE NOCASE`
+  ).bind(shortName).all<{ route_id: string }>();
+
+  return {
+    route_short_name: shortName,
+    route_ids: (routes ?? []).map(r => r.route_id),
+    nearest_stop: nearest!,
+  };
+}
+
 export async function getRoute(env: Env, routeId: string): Promise<Route | null> {
   return env.DB.prepare(
     `SELECT route_id, route_short_name, route_long_name,

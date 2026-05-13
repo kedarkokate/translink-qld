@@ -4,10 +4,12 @@
  * off (state stored in feed_meta.chunked_progress). After ~30 daily runs
  * the full feed is loaded and route_types is derived.
  *
- * Env vars (put in backend/.env):
- *   CF_ACCOUNT_ID
- *   CF_API_TOKEN          // token with D1:Edit on the database
- *   CF_D1_DATABASE_ID
+ * Env vars (put in backend/.env). The CF_ namespace is avoided so wrangler
+ * (which auto-loads .env) doesn't pick up our scoped D1 token and use it for
+ * its own deploys — it should keep using the OAuth session from `wrangler login`.
+ *   D1_ACCOUNT_ID
+ *   D1_API_TOKEN          // token with D1:Edit on the database
+ *   D1_DATABASE_ID
  *   SEED_BUDGET=80000     // optional; rows to write this run
  *
  * Usage:  npm run seed:remote
@@ -86,9 +88,9 @@ interface Progress {
 }
 
 async function main() {
-  const accountId = required("CF_ACCOUNT_ID");
-  const dbId = required("CF_D1_DATABASE_ID");
-  const token = required("CF_API_TOKEN");
+  const accountId = required("D1_ACCOUNT_ID");
+  const dbId = required("D1_DATABASE_ID");
+  const token = required("D1_API_TOKEN");
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${dbId}/query`;
   const budget = Number(process.env.SEED_BUDGET ?? DEFAULT_BUDGET);
 

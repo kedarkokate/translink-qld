@@ -61,6 +61,15 @@ final class TransLinkClient {
         return try await get(url, as: Resp.self).departures
     }
 
+    func routeNearestStop(
+        shortName: String, lat: Double, lon: Double,
+    ) async throws -> RouteNearestStop {
+        let url = try makeURL("/v1/routes/\(shortName)/nearest-stop", query: [
+            "lat": "\(lat)", "lon": "\(lon)",
+        ])
+        return try await get(url, as: RouteNearestStop.self)
+    }
+
     func vehicles(in bbox: BoundingBox? = nil) async throws -> [VehiclePosition] {
         struct Resp: Decodable { let vehicles: [VehiclePosition] }
         var query: [String: String] = [:]

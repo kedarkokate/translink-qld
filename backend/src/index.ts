@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import type { Env } from "./types";
 import {
   findNearbyStops, getStop, getRoutesForStop,
-  getRoute, getDepartures,
+  getRoute, getDepartures, findNearestStopForRoute,
 } from "./queries";
 import { getVehiclePositions } from "./gtfsRt";
 
@@ -49,6 +49,18 @@ app.get("/v1/stops/:stop_id/departures", async c => {
     stop_id: stopId,
     departures: await getDepartures(c.env, stopId, windowMin, limit),
   });
+});
+
+app.get("/v1/routes/:short_name/nearest-stop", async c => {
+  const shortName = c.req.param("short_name");
+  const lat = Number(c.req.query("lat"));
+  const lon = Number(c.req.query("lon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return c.json({ error: "lat and lon required" }, 400);
+  }
+  const result = await findNearestStopForRoute(c.env, shortName, lat, lon);
+  if (!result) return c.json({ error: `no stops found for route ${shortName}` }, 404);
+  return c.json(result);
 });
 
 app.get("/v1/routes/:route_id", async c => {

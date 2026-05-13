@@ -167,3 +167,15 @@ struct StopDetail: Codable {
     let stop: Stop
     let routes: [Route]
 }
+
+struct RouteNearestStop: Codable {
+    let routeShortName: String
+    let routeIds: [String]
+    let nearestStop: NearbyStop
+
+    enum CodingKeys: String, CodingKey {
+        case routeShortName = "route_short_name"
+        case routeIds = "route_ids"
+        case nearestStop = "nearest_stop"
+    }
+}
