@@ -11,10 +11,9 @@ struct NearbyStopsView: View {
     @State private var sheetShown = false
     @State private var routeLookupShown = false
     @State private var directionsShown = false
-    @State private var customizeShown = false
     @State private var focusedStop: NearbyStop?
     @State private var focusedRoute: String?
-    @AppStorage(MapTileOrder.storageKey) private var tileOrderRaw: String = MapTileOrder.defaultRaw
+    @AppStorage(TilePosition.storageKey) private var tilePositionRaw: String = TilePosition.defaultValue.rawValue
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var fetchTask: Task<Void, Never>?
     @State private var cameraPosition: MapCameraPosition = .userLocation(
@@ -51,10 +50,6 @@ struct NearbyStopsView: View {
                     DirectionsView()
                         .presentationDetents([.medium, .large])
                 }
-                .sheet(isPresented: $customizeShown) {
-                    TilesCustomizationView(rawOrder: $tileOrderRaw)
-                        .presentationDetents([.medium, .large])
-                }
         }
     }
 
@@ -73,20 +68,27 @@ struct NearbyStopsView: View {
             visibleRegion = context.region
             scheduleReload()
         }
-        .overlay(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(MapTileOrder.decode(tileOrderRaw)) { tile in
+        .overlay(alignment: tilePosition.alignment) {
+            VStack(alignment: tilePosition.stackAlignment, spacing: 8) {
+                ForEach(MapTileKind.allCases) { tile in
                     tilePill(for: tile)
                 }
                 if let route = focusedRoute {
                     clearFocusPill(route)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        .transition(
+                            .move(edge: tilePosition.transitionEdge)
+                            .combined(with: .opacity),
+                        )
                 }
             }
-            .padding(.top, 10)
-            .padding(.leading, 12)
+            .padding(tilePosition.edgeInsets)
             .animation(.spring(duration: 0.3), value: focusedRoute)
+            .animation(.spring(duration: 0.3), value: tilePosition)
         }
+    }
+
+    private var tilePosition: TilePosition {
+        TilePosition(rawValue: tilePositionRaw) ?? .defaultValue
     }
 
     @MapContentBuilder
@@ -151,10 +153,11 @@ struct NearbyStopsView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(tile.label)
         .contextMenu {
-            Button {
-                customizeShown = true
-            } label: {
-                Label("Customize layout…", systemImage: "slider.horizontal.3")
+            Picker("Move tiles", selection: $tilePositionRaw) {
+                ForEach(TilePosition.allCases) { pos in
+                    Label(pos.label, systemImage: pos.iconName)
+                        .tag(pos.rawValue)
+                }
             }
         }
     }
