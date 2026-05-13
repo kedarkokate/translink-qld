@@ -58,7 +58,9 @@ app.get("/v1/stops/:stop_id", async c => {
 app.get("/v1/stops/:stop_id/departures", async c => {
   const stopId = c.req.param("stop_id");
   const limit = Math.min(Number(c.req.query("limit") ?? 15), 50);
-  const windowMin = Math.min(Number(c.req.query("window_min") ?? 60), 180);
+  // Cap at 24h so callers can peek beyond the typical 2-3h horizon when
+  // they need to find the "very next service" after a quiet stretch.
+  const windowMin = Math.min(Number(c.req.query("window_min") ?? 60), 1440);
   return c.json({
     stop_id: stopId,
     departures: await getDepartures(c.env, stopId, windowMin, limit),

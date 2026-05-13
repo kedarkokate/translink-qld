@@ -5,6 +5,7 @@ struct StopDetailView: View {
 
     @State private var detail: StopDetail?
     @State private var departures: [Departure] = []
+    @State private var nextServicePeek: Departure?
     @State private var loading = false
     @State private var error: String?
     @State private var refreshTask: Task<Void, Never>?
@@ -19,9 +20,7 @@ struct StopDetailView: View {
                     if !grouped.isEmpty {
                         upcomingSection
                     } else if !loading {
-                        Text("No upcoming departures in the next two hours.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        noUpcomingSection
                     }
 
                     if let routes = detail?.routes, !routes.isEmpty {
@@ -89,6 +88,43 @@ struct StopDetailView: View {
             byKey[key]!.times.append(dep)
         }
         return keyOrder.compactMap { byKey[$0] }
+    }
+
+    @ViewBuilder
+    private var noUpcomingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("No upcoming departures in the next two hours.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            if let peek = nextServicePeek {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("NEXT SERVICE")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    HStack(alignment: .center, spacing: 14) {
+                        routeBadge(text: peek.routeBadge, type: peek.routeType,
+                                   prominent: true, shortName: peek.routeShortName)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(peek.headsign ?? peek.routeLongName ?? "—")
+                                .font(.subheadline).lineLimit(2)
+                            Text(formattedFutureTime(peek.effectiveDeparture))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+
+    private func formattedFutureTime(_ date: Date) -> String {
+        let cal = Calendar.current
+        let time = date.formatted(date: .omitted, time: .shortened)
+        if cal.isDateInToday(date) { return "Today at \(time)" }
+        if cal.isDateInTomorrow(date) { return "Tomorrow at \(time)" }
+        let weekday = date.formatted(.dateTime.weekday(.wide))
+        return "\(weekday) at \(time)"
     }
 
     @ViewBuilder
@@ -203,10 +239,29 @@ struct StopDetailView: View {
             )
             detail = try await d
             departures = try await deps
+            await reconcileNextServicePeek()
         } catch is CancellationError {
             return
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// When the 2-hour window has nothing, peek up to 24h ahead for the very
+    /// next service so the user still sees a time/route they can rely on.
+    @MainActor
+    private func reconcileNextServicePeek() async {
+        guard departures.isEmpty else {
+            nextServicePeek = nil
+            return
+        }
+        do {
+            let next = try await TransLinkClient.shared.departures(
+                stopId: stop.stopId, limit: 1, windowMin: 1440,
+            )
+            nextServicePeek = next.first
+        } catch {
+            // Silent — fall back to the plain "No upcoming…" message.
         }
     }
 
@@ -227,6 +282,7 @@ struct StopDetailView: View {
             departures = try await TransLinkClient.shared.departures(
                 stopId: stop.stopId, limit: 30, windowMin: 120,
             )
+            await reconcileNextServicePeek()
         } catch {
             // Silent — keep the last good list.
         }
