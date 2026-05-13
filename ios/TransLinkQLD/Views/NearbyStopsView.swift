@@ -94,7 +94,7 @@ struct NearbyStopsView: View {
             Annotation(focused.stopName, coordinate: focused.coordinate, anchor: .center) {
                 FocusedStopMarker(
                     routeBadge: focusedRoute,
-                    isFerry: focused.isFerry,
+                    symbol: Self.stopSymbol(for: focused),
                 )
             }
             .tag(focused)
@@ -103,10 +103,24 @@ struct NearbyStopsView: View {
 
     private func marker(for stop: NearbyStop) -> some MapContent {
         Marker(stop.stopName,
-               systemImage: stop.isFerry ? "ferry.fill" : "bus.fill",
+               systemImage: Self.stopSymbol(for: stop),
                coordinate: stop.coordinate)
-            .tint(stop.isFerry ? .blue : .red)
+            .tint(Self.stopTint(for: stop))
             .tag(stop)
+    }
+
+    /// Priority: ferry → rail → bus. A stop served by multiple modes shows
+    /// the most distinctive one (rare in SEQ outside major interchanges).
+    static func stopSymbol(for stop: NearbyStop) -> String {
+        if stop.isFerry { return "ferry.fill" }
+        if stop.isRail { return "train.side.front.car" }
+        return "bus.fill"
+    }
+
+    static func stopTint(for stop: NearbyStop) -> Color {
+        if stop.isFerry { return .blue }
+        if stop.isRail { return .orange }
+        return .red
     }
 
     // MARK: Overlays
@@ -275,7 +289,7 @@ struct NearbyStopsView: View {
 /// regular marker layer so it reads as "this is the one you searched for".
 private struct FocusedStopMarker: View {
     let routeBadge: String?
-    let isFerry: Bool
+    let symbol: String
     @State private var pulse = false
 
     var body: some View {
@@ -291,7 +305,7 @@ private struct FocusedStopMarker: View {
                 )
 
             VStack(spacing: 1) {
-                Image(systemName: isFerry ? "ferry.fill" : "bus.fill")
+                Image(systemName: symbol)
                     .font(.system(size: 13, weight: .bold))
                 if let badge = routeBadge {
                     Text(badge)

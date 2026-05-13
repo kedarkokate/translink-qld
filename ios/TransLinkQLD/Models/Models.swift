@@ -18,6 +18,7 @@ struct Stop: Codable, Identifiable, Hashable {
     }
     var routeTypeSet: Set<Int> { parseRouteTypes(routeTypes) }
     var isFerry: Bool { routeTypeSet.contains(4) }
+    var isRail: Bool { routeTypeSet.contains(2) || routeTypeSet.contains(1) }
 
     enum CodingKeys: String, CodingKey {
         case stopId = "stop_id"
@@ -50,6 +51,7 @@ struct NearbyStop: Codable, Identifiable, Hashable {
     }
     var routeTypeSet: Set<Int> { parseRouteTypes(routeTypes) }
     var isFerry: Bool { routeTypeSet.contains(4) }
+    var isRail: Bool { routeTypeSet.contains(2) || routeTypeSet.contains(1) }
 
     enum CodingKeys: String, CodingKey {
         case stopId = "stop_id"
