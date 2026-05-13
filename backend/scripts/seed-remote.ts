@@ -198,7 +198,12 @@ async function ingestChunk(
     const rowPlaceholders = rowBuf.map((_, ri) =>
       "(" + spec.cols.map((_, ci) => `?${ri * ncols + ci + 1}`).join(",") + ")"
     ).join(",");
-    const sql = `INSERT INTO ${spec.table}(${colNames}) VALUES ${rowPlaceholders}`;
+    // OR IGNORE: TransLink republishes GTFS regularly. If a chunk happens
+    // to span a feed-version change, trip_ids / stop_ids we already loaded
+    // may reappear at different offsets in the new file. Silently skipping
+    // those keeps the seed making forward progress instead of aborting the
+    // entire daily run.
+    const sql = `INSERT OR IGNORE INTO ${spec.table}(${colNames}) VALUES ${rowPlaceholders}`;
     const params = rowBuf.flat();
     await d1.exec(sql, params);
     rowBuf = [];
