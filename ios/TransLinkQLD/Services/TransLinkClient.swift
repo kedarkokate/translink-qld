@@ -61,6 +61,11 @@ final class TransLinkClient {
         return try await get(url, as: Resp.self).departures
     }
 
+    func routeStops(shortName: String) async throws -> RouteStopsResponse {
+        let url = try makeURL("/v1/routes/\(shortName)/stops")
+        return try await get(url, as: RouteStopsResponse.self)
+    }
+
     func planJourney(
         from: CLLocationCoordinate2D,
         to: CLLocationCoordinate2D,

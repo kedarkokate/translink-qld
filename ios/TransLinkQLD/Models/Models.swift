@@ -237,6 +237,74 @@ struct JourneyStopRef: Codable, Hashable {
     }
 }
 
+// MARK: - Route stops list
+
+struct RouteStopsResponse: Codable {
+    let routeShortName: String
+    let routeLongName: String?
+    let routeType: Int
+    let directions: [RouteDirection]
+
+    enum CodingKeys: String, CodingKey {
+        case routeShortName = "route_short_name"
+        case routeLongName = "route_long_name"
+        case routeType = "route_type"
+        case directions
+    }
+}
+
+struct RouteDirection: Codable, Identifiable {
+    let directionId: Int?
+    let headsign: String?
+    let stops: [RouteStop]
+
+    var id: String { "\(directionId ?? -1)|\(headsign ?? "")" }
+
+    enum CodingKeys: String, CodingKey {
+        case directionId = "direction_id"
+        case headsign
+        case stops
+    }
+}
+
+struct RouteStop: Codable, Identifiable {
+    let stopId: String
+    let stopCode: String?
+    let stopName: String
+    let stopLat: Double
+    let stopLon: Double
+    let locationType: Int
+    let parentStation: String?
+    let platformCode: String?
+    let routeTypes: String?
+    let stopSequence: Int
+
+    var id: String { "\(stopId)@\(stopSequence)" }
+
+    /// Convert to a `NearbyStop` so the existing `StopDetailView` can consume it.
+    func asNearbyStop() -> NearbyStop {
+        NearbyStop(
+            stopId: stopId, stopCode: stopCode, stopName: stopName,
+            stopLat: stopLat, stopLon: stopLon, locationType: locationType,
+            parentStation: parentStation, platformCode: platformCode,
+            routeTypes: routeTypes, distanceM: 0,
+        )
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case stopId = "stop_id"
+        case stopCode = "stop_code"
+        case stopName = "stop_name"
+        case stopLat = "stop_lat"
+        case stopLon = "stop_lon"
+        case locationType = "location_type"
+        case parentStation = "parent_station"
+        case platformCode = "platform_code"
+        case routeTypes = "route_types"
+        case stopSequence = "stop_sequence"
+    }
+}
+
 struct RouteNearestStop: Codable {
     let routeShortName: String
     let routeIds: [String]

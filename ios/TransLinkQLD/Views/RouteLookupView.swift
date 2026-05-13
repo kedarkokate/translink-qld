@@ -13,6 +13,7 @@ struct RouteLookupView: View {
     @State private var result: RouteNearestStop?
     @State private var searching = false
     @State private var error: String?
+    @State private var routeStopsRequest: RouteStopsRequest?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -40,6 +41,9 @@ struct RouteLookupView: View {
                 }
             }
             .onAppear { inputFocused = true }
+            .sheet(item: $routeStopsRequest) { req in
+                RouteStopsView(shortName: req.shortName)
+            }
         }
     }
 
@@ -84,13 +88,22 @@ struct RouteLookupView: View {
     private func resultCard(_ r: RouteNearestStop) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Text(r.routeShortName)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                Button {
+                    routeStopsRequest = RouteStopsRequest(shortName: r.routeShortName)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(r.routeShortName)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 11, weight: .bold))
+                    }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .foregroundStyle(.white)
                     .background(.blue, in: RoundedRectangle(cornerRadius: 8))
-                Text("Nearest stop")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                Text("Tap badge for stops • Nearest stop:")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 4) {

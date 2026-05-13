@@ -105,6 +105,118 @@ export async function getRoutesForStop(env: Env, stopId: string): Promise<Route[
   return results ?? [];
 }
 
+export interface RouteStopsResult {
+  route_short_name: string;
+  route_long_name: string | null;
+  route_type: number;
+  directions: RouteDirection[];
+}
+
+export interface RouteDirection {
+  direction_id: number | null;
+  headsign: string | null;
+  stops: Array<Stop & { stop_sequence: number }>;
+}
+
+export async function getStopsForRoute(
+  env: Env, shortName: string,
+): Promise<RouteStopsResult | null> {
+  // One representative route record for naming + type metadata.
+  const meta = await env.DB.prepare(
+    `SELECT route_short_name, route_long_name, route_type
+     FROM routes WHERE route_short_name = ?1 COLLATE NOCASE LIMIT 1`
+  ).bind(shortName).first<{
+    route_short_name: string;
+    route_long_name: string | null;
+    route_type: number;
+  }>();
+  if (!meta) return null;
+
+  // Pull every (direction_id, trip_headsign) pair across all matching route
+  // variants and a representative trip_id for each (the one with the most
+  // stop_times — usually the canonical, non-express variant).
+  type Row = {
+    direction_id: number | null;
+    trip_headsign: string | null;
+    stop_id: string;
+    stop_code: string | null;
+    stop_name: string;
+    stop_lat: number;
+    stop_lon: number;
+    location_type: number;
+    parent_station: string | null;
+    platform_code: string | null;
+    route_types: string | null;
+    stop_sequence: number;
+  };
+
+  const { results } = await env.DB.prepare(
+    `WITH route_match AS (
+       SELECT route_id FROM routes WHERE route_short_name = ?1 COLLATE NOCASE
+     ),
+     trip_lengths AS (
+       SELECT t.trip_id, t.direction_id, t.trip_headsign,
+              COUNT(st.stop_id) AS n
+       FROM trips t
+       JOIN route_match rm ON rm.route_id = t.route_id
+       JOIN stop_times st ON st.trip_id = t.trip_id
+       GROUP BY t.trip_id
+     ),
+     ranked AS (
+       SELECT trip_id, direction_id, trip_headsign,
+              ROW_NUMBER() OVER (
+                PARTITION BY COALESCE(direction_id, -1), COALESCE(trip_headsign, '')
+                ORDER BY n DESC, trip_id
+              ) AS rn
+       FROM trip_lengths
+     ),
+     rep AS (
+       SELECT trip_id, direction_id, trip_headsign FROM ranked WHERE rn = 1
+     )
+     SELECT rep.direction_id, rep.trip_headsign,
+            s.stop_id, s.stop_code, s.stop_name, s.stop_lat, s.stop_lon,
+            s.location_type, s.parent_station, s.platform_code, s.route_types,
+            st.stop_sequence
+     FROM rep
+     JOIN stop_times st ON st.trip_id = rep.trip_id
+     JOIN stops s ON s.stop_id = st.stop_id
+     ORDER BY rep.trip_headsign, st.stop_sequence`
+  ).bind(shortName).all<Row>();
+
+  if (!results || results.length === 0) return null;
+
+  const byKey = new Map<string, RouteDirection>();
+  for (const r of results) {
+    const key = `${r.direction_id ?? -1}|${r.trip_headsign ?? ""}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        direction_id: r.direction_id,
+        headsign: r.trip_headsign,
+        stops: [],
+      });
+    }
+    byKey.get(key)!.stops.push({
+      stop_id: r.stop_id,
+      stop_code: r.stop_code,
+      stop_name: r.stop_name,
+      stop_lat: r.stop_lat,
+      stop_lon: r.stop_lon,
+      location_type: r.location_type,
+      parent_station: r.parent_station,
+      platform_code: r.platform_code,
+      route_types: r.route_types,
+      stop_sequence: r.stop_sequence,
+    });
+  }
+
+  return {
+    route_short_name: meta.route_short_name,
+    route_long_name: meta.route_long_name,
+    route_type: meta.route_type,
+    directions: Array.from(byKey.values()),
+  };
+}
+
 export async function findNearestStopForRoute(
   env: Env, shortName: string,
   userLat: number, userLon: number,

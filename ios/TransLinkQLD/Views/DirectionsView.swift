@@ -12,6 +12,7 @@ struct DirectionsView: View {
     @State private var options: [JourneyOption] = []
     @State private var searching = false
     @State private var error: String?
+    @State private var routeStopsRequest: RouteStopsRequest?
 
     enum PickerKind: Identifiable {
         case from, to
@@ -51,6 +52,9 @@ struct DirectionsView: View {
                 if from == nil, let loc = locationManager.lastLocation?.coordinate {
                     from = .currentLocation(loc)
                 }
+            }
+            .sheet(item: $routeStopsRequest) { req in
+                RouteStopsView(shortName: req.shortName)
             }
             .sheet(item: $pickerKind) { kind in
                 LocationPickerView(
@@ -266,12 +270,25 @@ struct DirectionsView: View {
     }
 
     private func routeBadge(_ route: JourneyRoute) -> some View {
-        Text(route.displayName)
-            .font(.system(size: 14, weight: .bold, design: .rounded))
+        Button {
+            if let name = route.routeShortName, !name.isEmpty {
+                routeStopsRequest = RouteStopsRequest(shortName: name)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(route.displayName)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                if route.routeShortName?.isEmpty == false {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 10, weight: .bold))
+                }
+            }
             .padding(.horizontal, 10).padding(.vertical, 5)
             .foregroundStyle(.white)
             .background(routeColor(route.routeType), in: RoundedRectangle(cornerRadius: 8))
             .frame(minWidth: 48)
+        }
+        .buttonStyle(.plain)
     }
 
     private func routeColor(_ rt: Int) -> Color {

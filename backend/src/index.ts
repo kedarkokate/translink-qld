@@ -4,7 +4,7 @@ import type { Env } from "./types";
 import {
   findNearbyStops, getStop, getRoutesForStop,
   getRoute, getDepartures, findNearestStopForRoute, searchStops,
-  planJourney,
+  planJourney, getStopsForRoute,
 } from "./queries";
 import { getVehiclePositions } from "./gtfsRt";
 
@@ -61,6 +61,13 @@ app.get("/v1/stops/:stop_id/departures", async c => {
     stop_id: stopId,
     departures: await getDepartures(c.env, stopId, windowMin, limit),
   });
+});
+
+app.get("/v1/routes/:short_name/stops", async c => {
+  const shortName = c.req.param("short_name");
+  const result = await getStopsForRoute(c.env, shortName);
+  if (!result) return c.json({ error: `no route '${shortName}'` }, 404);
+  return c.json(result);
 });
 
 app.get("/v1/routes/:short_name/nearest-stop", async c => {
