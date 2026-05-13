@@ -1,8 +1,7 @@
 import SwiftUI
 
 struct StopDetailView: View {
-    let stopId: String
-    let stopName: String
+    let stop: NearbyStop
 
     @State private var detail: StopDetail?
     @State private var departures: [Departure] = []
@@ -12,56 +11,183 @@ struct StopDetailView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("Stop") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(detail?.stop.stopName ?? stopName).font(.headline)
-                        if let code = detail?.stop.stopCode {
-                            Text("Stop code \(code)").font(.caption).foregroundStyle(.secondary)
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
+
+                    if !grouped.isEmpty {
+                        upcomingSection
+                    } else if !loading {
+                        Text("No upcoming departures in the next two hours.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let routes = detail?.routes, !routes.isEmpty {
+                        allRoutesSection(routes)
+                    }
+
+                    if loading && departures.isEmpty {
+                        ProgressView().frame(maxWidth: .infinity, minHeight: 80)
+                    }
+
+                    if let error {
+                        Text(error).font(.caption).foregroundStyle(.red)
                     }
                 }
-
-                if !departures.isEmpty {
-                    Section("Next departures") {
-                        ForEach(departures) { dep in
-                            DepartureRow(departure: dep)
-                        }
-                    }
-                }
-
-                if departures.isEmpty && !loading {
-                    Text("No upcoming departures in the next hour.")
-                        .foregroundStyle(.secondary).font(.subheadline)
-                }
-
-                if let error {
-                    Text(error).foregroundStyle(.red).font(.caption)
-                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
-            .navigationTitle(stopName)
             .navigationBarTitleDisplayMode(.inline)
-            .overlay {
-                if loading && departures.isEmpty {
-                    ProgressView()
-                }
-            }
-            .task {
-                await loadDetail()
+            .toolbar(.hidden, for: .navigationBar)
+            .task(id: stop.stopId) {
+                await loadAll()
                 startAutoRefresh()
             }
             .onDisappear { refreshTask?.cancel() }
         }
     }
 
+    // MARK: Header
+
+    @ViewBuilder
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(stop.stopName)
+                .font(.largeTitle).fontWeight(.bold)
+                .fixedSize(horizontal: false, vertical: true)
+            if let code = stop.stopCode {
+                Text("Stop \(code)")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: Upcoming departures (grouped by route + headsign)
+
+    private var grouped: [DepartureGroup] {
+        var byKey: [String: DepartureGroup] = [:]
+        var keyOrder: [String] = []
+        let sorted = departures
+            .filter { !$0.isCancelled }
+            .sorted { $0.effectiveDeparture < $1.effectiveDeparture }
+        for dep in sorted {
+            let key = "\(dep.routeId)|\(dep.headsign ?? "")"
+            if byKey[key] == nil {
+                byKey[key] = DepartureGroup(
+                    key: key, badge: dep.routeBadge,
+                    headsign: dep.headsign, routeType: dep.routeType, times: [],
+                )
+                keyOrder.append(key)
+            }
+            byKey[key]!.times.append(dep)
+        }
+        return keyOrder.compactMap { byKey[$0] }
+    }
+
+    @ViewBuilder
+    private var upcomingSection: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(grouped.enumerated()), id: \.element.id) { idx, group in
+                upcomingRow(group)
+                if idx < grouped.count - 1 {
+                    Divider().padding(.vertical, 8)
+                }
+            }
+        }
+    }
+
+    private func upcomingRow(_ group: DepartureGroup) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            routeBadge(text: group.badge, type: group.routeType, prominent: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(group.headsign ?? "—")
+                    .font(.subheadline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                if group.times.first?.isRealtime == true {
+                    HStack(spacing: 3) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                        Text("Live")
+                    }.font(.caption2).foregroundStyle(.green)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(formatTimes(group.times))
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func formatTimes(_ deps: [Departure]) -> String {
+        let parts = deps.prefix(3).map { dep -> String in
+            let m = Int(dep.effectiveDeparture.timeIntervalSinceNow / 60)
+            return m <= 0 ? "Due" : "\(m)"
+        }
+        return parts.joined(separator: ", ") + " min"
+    }
+
+    // MARK: All routes serving this stop
+
+    @ViewBuilder
+    private func allRoutesSection(_ routes: [Route]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+            Text("All routes serving this stop").font(.headline)
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 56, maximum: 90), spacing: 8)],
+                alignment: .leading, spacing: 8,
+            ) {
+                ForEach(routes) { route in
+                    routeBadge(text: route.displayName, type: route.routeType,
+                               prominent: false)
+                }
+            }
+        }
+    }
+
+    // MARK: Route badge
+
+    private func routeBadge(text: String, type: Int, prominent: Bool) -> some View {
+        Text(text)
+            .font(.system(size: prominent ? 15 : 13,
+                          weight: .bold, design: .rounded))
+            .padding(.horizontal, prominent ? 12 : 10)
+            .padding(.vertical, prominent ? 7 : 5)
+            .foregroundStyle(.white)
+            .background(routeColor(type), in: RoundedRectangle(cornerRadius: 8))
+            .frame(minWidth: prominent ? 56 : 48)
+    }
+
+    private func routeColor(_ rt: Int) -> Color {
+        switch RouteType(rawValue: rt) {
+        case .bus: .blue
+        case .rail, .subway: .indigo
+        case .ferry: .cyan
+        case .tram: .pink
+        default: .gray
+        }
+    }
+
+    // MARK: Loading
+
     @MainActor
-    private func loadDetail() async {
-        loading = true; defer { loading = false }
+    private func loadAll() async {
+        loading = true; error = nil
+        defer { loading = false }
         do {
-            async let d = TransLinkClient.shared.stopDetail(stopId: stopId)
-            async let deps = TransLinkClient.shared.departures(stopId: stopId)
+            async let d = TransLinkClient.shared.stopDetail(stopId: stop.stopId)
+            async let deps = TransLinkClient.shared.departures(
+                stopId: stop.stopId, limit: 30, windowMin: 120,
+            )
             detail = try await d
             departures = try await deps
+        } catch is CancellationError {
+            return
         } catch {
             self.error = error.localizedDescription
         }
@@ -81,77 +207,20 @@ struct StopDetailView: View {
     @MainActor
     private func refreshDepartures() async {
         do {
-            departures = try await TransLinkClient.shared.departures(stopId: stopId)
+            departures = try await TransLinkClient.shared.departures(
+                stopId: stop.stopId, limit: 30, windowMin: 120,
+            )
         } catch {
-            // Silent — keep last good list.
+            // Silent — keep the last good list.
         }
     }
 }
 
-struct DepartureRow: View {
-    let departure: Departure
-
-    var body: some View {
-        HStack(spacing: 12) {
-            routeBadge
-            VStack(alignment: .leading, spacing: 2) {
-                Text(departure.headsign ?? departure.routeLongName ?? "—")
-                    .font(.subheadline).lineLimit(1)
-                if let delay = departure.delaySeconds, departure.isRealtime {
-                    Text(delay >= 0 ? "+\(delay / 60) min" : "\(delay / 60) min")
-                        .font(.caption)
-                        .foregroundStyle(delay > 60 ? .orange : .secondary)
-                } else if !departure.isRealtime {
-                    Text("Scheduled").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            departureTime
-        }
-        .opacity(departure.isCancelled ? 0.4 : 1)
-        .overlay(alignment: .trailing) {
-            if departure.isCancelled {
-                Text("Cancelled").font(.caption2).foregroundStyle(.red)
-            }
-        }
-    }
-
-    private var routeBadge: some View {
-        Text(departure.routeBadge)
-            .font(.system(size: 13, weight: .bold, design: .rounded))
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .foregroundStyle(.white)
-            .background(routeColor, in: RoundedRectangle(cornerRadius: 6))
-            .frame(minWidth: 44)
-    }
-
-    private var routeColor: Color {
-        switch RouteType(rawValue: departure.routeType) {
-        case .bus: .blue
-        case .rail, .subway: .yellow
-        case .ferry: .cyan
-        case .tram: .pink
-        default: .gray
-        }
-    }
-
-    private var departureTime: some View {
-        let target = departure.effectiveDeparture
-        let minsAway = Int(target.timeIntervalSinceNow / 60)
-        return VStack(alignment: .trailing, spacing: 2) {
-            if minsAway <= 0 {
-                Text("Now").font(.headline).monospacedDigit()
-            } else if minsAway < 60 {
-                Text("\(minsAway) min").font(.headline).monospacedDigit()
-            } else {
-                Text(target, style: .time).font(.headline).monospacedDigit()
-            }
-            if departure.isRealtime {
-                HStack(spacing: 3) {
-                    Image(systemName: "dot.radiowaves.left.and.right")
-                    Text("Live")
-                }.font(.caption2).foregroundStyle(.green)
-            }
-        }
-    }
+struct DepartureGroup: Identifiable {
+    let key: String
+    var id: String { key }
+    let badge: String
+    let headsign: String?
+    let routeType: Int
+    var times: [Departure]
 }

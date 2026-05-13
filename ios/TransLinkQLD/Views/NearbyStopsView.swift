@@ -8,11 +8,7 @@ struct NearbyStopsView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var selectedStop: NearbyStop?
-    @State private var detailStop: NearbyStop?
-    @State private var nextDeparture: Departure?
-    @State private var loadingNextDeparture = false
-    @State private var nextDepartureError: String?
-    @State private var nextDepartureTask: Task<Void, Never>?
+    @State private var sheetShown = false
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var fetchTask: Task<Void, Never>?
     @State private var cameraPosition: MapCameraPosition = .userLocation(
@@ -29,29 +25,24 @@ struct NearbyStopsView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottom) {
-                Map(position: $cameraPosition, selection: $selectedStop) {
-                    UserAnnotation()
-                    ForEach(stops) { stop in
-                        Marker(stop.stopName,
-                               systemImage: stop.isFerry ? "ferry.fill" : "bus.fill",
-                               coordinate: stop.coordinate)
-                            .tint(stop.isFerry ? .blue : .red)
-                            .tag(stop)
-                    }
+            Map(position: $cameraPosition, selection: $selectedStop) {
+                UserAnnotation()
+                ForEach(stops) { stop in
+                    Marker(stop.stopName,
+                           systemImage: stop.isFerry ? "ferry.fill" : "bus.fill",
+                           coordinate: stop.coordinate)
+                        .tint(stop.isFerry ? .blue : .red)
+                        .tag(stop)
                 }
-                .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
-                .mapControls {
-                    MapUserLocationButton()
-                    MapCompass()
-                }
-                .onMapCameraChange(frequency: .onEnd) { context in
-                    visibleRegion = context.region
-                    scheduleReload()
-                }
-
-                bottomCard
-                    .animation(.spring(duration: 0.3), value: selectedStop)
+            }
+            .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+            .mapControls {
+                MapUserLocationButton()
+                MapCompass()
+            }
+            .onMapCameraChange(frequency: .onEnd) { context in
+                visibleRegion = context.region
+                scheduleReload()
             }
             .navigationTitle("Nearby")
             .navigationBarTitleDisplayMode(.inline)
@@ -70,149 +61,17 @@ struct NearbyStopsView: View {
                 }
             }
             .onChange(of: selectedStop) { _, newStop in
-                handleSelectionChange(newStop)
+                if newStop != nil { sheetShown = true }
             }
-            .sheet(item: $detailStop) { stop in
-                StopDetailView(stopId: stop.stopId, stopName: stop.stopName)
-                    .presentationDetents([.medium, .large])
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var bottomCard: some View {
-        if let stop = selectedStop {
-            selectedStopCard(stop)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
-    }
-
-    private func selectedStopCard(_ stop: NearbyStop) -> some View {
-        Button {
-            detailStop = stop
-        } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(stop.stopName).font(.headline).lineLimit(2).multilineTextAlignment(.leading)
-                        if let code = stop.stopCode {
-                            Text("Stop \(code)").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    Button {
-                        selectedStop = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title3).foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
+            .sheet(isPresented: $sheetShown, onDismiss: {
+                selectedStop = nil
+            }) {
+                if let stop = selectedStop {
+                    StopDetailView(stop: stop)
+                        .presentationDetents([.fraction(0.45), .large])
+                        .presentationDragIndicator(.visible)
                 }
-                Divider()
-                nextDepartureRow
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .contentShape(RoundedRectangle(cornerRadius: 14))
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal)
-        .padding(.bottom, 8)
-    }
-
-    @ViewBuilder
-    private var nextDepartureRow: some View {
-        if loadingNextDeparture && nextDeparture == nil {
-            HStack(spacing: 8) {
-                ProgressView().scaleEffect(0.8)
-                Text("Loading next departure…").font(.subheadline).foregroundStyle(.secondary)
-            }
-        } else if let err = nextDepartureError {
-            Text(err).font(.caption).foregroundStyle(.red)
-        } else if let dep = nextDeparture {
-            HStack(spacing: 12) {
-                routeBadge(dep)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(dep.headsign ?? dep.routeLongName ?? "—")
-                        .font(.subheadline).lineLimit(1)
-                    if dep.isRealtime {
-                        HStack(spacing: 3) {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                            Text("Live")
-                        }.font(.caption2).foregroundStyle(.green)
-                    } else {
-                        Text("Scheduled").font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                departureTimeView(dep)
-                Image(systemName: "chevron.right")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .opacity(dep.isCancelled ? 0.4 : 1)
-        } else {
-            Text("No upcoming departures in the next 3 hours.")
-                .font(.subheadline).foregroundStyle(.secondary)
-        }
-    }
-
-    private func routeBadge(_ dep: Departure) -> some View {
-        let color: Color = switch RouteType(rawValue: dep.routeType) {
-        case .bus: .blue
-        case .rail, .subway: .yellow
-        case .ferry: .cyan
-        case .tram: .pink
-        default: .gray
-        }
-        return Text(dep.routeBadge)
-            .font(.system(size: 13, weight: .bold, design: .rounded))
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .foregroundStyle(.white)
-            .background(color, in: RoundedRectangle(cornerRadius: 6))
-            .frame(minWidth: 48)
-    }
-
-    private func departureTimeView(_ dep: Departure) -> some View {
-        let target = dep.effectiveDeparture
-        let minsAway = Int(target.timeIntervalSinceNow / 60)
-        return VStack(alignment: .trailing, spacing: 0) {
-            if minsAway <= 0 {
-                Text("Now").font(.headline).monospacedDigit()
-            } else if minsAway < 60 {
-                Text("\(minsAway) min").font(.headline).monospacedDigit()
-            } else {
-                Text(target, style: .time).font(.headline).monospacedDigit()
-            }
-        }
-    }
-
-    private func handleSelectionChange(_ newStop: NearbyStop?) {
-        nextDepartureTask?.cancel()
-        nextDeparture = nil
-        nextDepartureError = nil
-        guard let stop = newStop else { return }
-        nextDepartureTask = Task { @MainActor in
-            await loadNextDeparture(stopId: stop.stopId)
-        }
-    }
-
-    @MainActor
-    private func loadNextDeparture(stopId: String) async {
-        loadingNextDeparture = true; nextDepartureError = nil
-        defer { loadingNextDeparture = false }
-        do {
-            let deps = try await TransLinkClient.shared.departures(
-                stopId: stopId, limit: 1, windowMin: 180,
-            )
-            // Only commit if this is still the active selection.
-            if selectedStop?.stopId == stopId {
-                nextDeparture = deps.first
-            }
-        } catch is CancellationError {
-            return
-        } catch {
-            nextDepartureError = error.localizedDescription
         }
     }
 
