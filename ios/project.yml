@@ -31,6 +31,9 @@ targets:
           - UIInterfaceOrientationPortrait
         NSLocationWhenInUseUsageDescription: "Used to show nearby bus, train, ferry and tram stops."
         ITSAppUsesNonExemptEncryption: false
+        # Needed so `canOpenURL(comgooglemaps://)` can detect Google Maps.
+        LSApplicationQueriesSchemes:
+          - comgooglemaps
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: au.com.translinkqld.app

@@ -113,6 +113,13 @@ struct NearbyStopsView: View {
                     .combined(with: .opacity),
                 )
         }
+        if let stop = focusedStop {
+            directionsToStopPill(stop)
+                .transition(
+                    .move(edge: tilePosition.transitionEdge)
+                    .combined(with: .opacity),
+                )
+        }
     }
 
     private var tilePosition: TilePosition {
@@ -283,6 +290,69 @@ struct NearbyStopsView: View {
                 fallback: .region(Self.brisbaneFallback),
             )
         }
+    }
+
+    /// Walking-directions pill that hands off to the user's chosen map app.
+    /// Apple Maps is always offered; Google Maps is offered too if installed
+    /// (detected via `canOpenURL` with `LSApplicationQueriesSchemes`).
+    @ViewBuilder
+    private func directionsToStopPill(_ stop: NearbyStop) -> some View {
+        if hasGoogleMapsInstalled {
+            Menu {
+                Button { openAppleMaps(to: stop) } label: {
+                    Label("Open in Apple Maps", systemImage: "applelogo")
+                }
+                Button { openGoogleMaps(to: stop) } label: {
+                    Label("Open in Google Maps", systemImage: "globe")
+                }
+            } label: {
+                directionsToStopPillLabel
+            }
+        } else {
+            Button {
+                openAppleMaps(to: stop)
+            } label: {
+                directionsToStopPillLabel
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var directionsToStopPillLabel: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "figure.walk.diamond.fill")
+            Text("Walk").fontWeight(.semibold)
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .foregroundStyle(.white)
+        .background(.blue, in: Capsule())
+        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+    }
+
+    private var hasGoogleMapsInstalled: Bool {
+        guard let url = URL(string: "comgooglemaps://") else { return false }
+        return UIApplication.shared.canOpenURL(url)
+    }
+
+    private func openAppleMaps(to stop: NearbyStop) {
+        let dst = MKMapItem(placemark: MKPlacemark(coordinate: stop.coordinate))
+        dst.name = stop.stopName
+        // Omitting the source uses the device's current location automatically.
+        MKMapItem.openMaps(with: [dst], launchOptions: [
+            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking,
+        ])
+    }
+
+    private func openGoogleMaps(to stop: NearbyStop) {
+        let coord = "\(stop.stopLat),\(stop.stopLon)"
+        let encodedName = stop.stopName
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        // Empty saddr → current location. directionsmode=walking matches the
+        // pill's "Walk" labelling; the user can change mode inside the app.
+        let raw = "comgooglemaps://?saddr=&daddr=\(coord)&directionsmode=walking&q=\(encodedName)"
+        guard let url = URL(string: raw) else { return }
+        UIApplication.shared.open(url)
     }
 
     private func clearFocusPill(_ routeName: String) -> some View {
