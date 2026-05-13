@@ -164,54 +164,91 @@ struct NearbyStopsView: View {
 
     // MARK: Overlays
 
+    @ViewBuilder
     private func tilePill(for tile: MapTileKind) -> some View {
+        switch tile {
+        case .filters:
+            filtersTilePill
+        default:
+            actionTilePill(for: tile)
+        }
+    }
+
+    private func actionTilePill(for tile: MapTileKind) -> some View {
         Button {
             handleTileTap(tile)
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: tile.iconName)
-                if !tile.iconOnlyOnMap {
-                    Text(tile.label).fontWeight(.semibold)
-                }
-            }
-            .font(.subheadline)
-            .padding(.horizontal, tile.iconOnlyOnMap ? 11 : 14)
-            .padding(.vertical, 10)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
+            tilePillLabel(icon: tile.iconName, text: tile.label, iconOnly: tile.iconOnlyOnMap)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tile.label)
-        .contextMenu {
-            Picker("Move tiles", selection: $tilePositionRaw) {
-                ForEach(TilePosition.allCases) { pos in
-                    Label(pos.label, systemImage: pos.iconName)
-                        .tag(pos.rawValue)
-                }
+        .contextMenu { tileLayoutMenu }
+    }
+
+    /// The Filters tile uses `Menu` so a tap reveals the three mode toggles
+    /// directly, while long-press still opens the layout / reorder controls.
+    private var filtersTilePill: some View {
+        Menu {
+            Toggle(isOn: $showBuses) {
+                Label("Buses", systemImage: "bus.fill")
             }
-            Picker("Layout", selection: $tileOrientationRaw) {
-                ForEach(TileOrientation.allCases) { o in
-                    Label(o.label, systemImage: o.iconName)
-                        .tag(o.rawValue)
-                }
+            Toggle(isOn: $showTrains) {
+                Label("Trains", systemImage: "train.side.front.car")
             }
-            Button {
-                customizeShown = true
-            } label: {
-                Label("Reorder tiles…", systemImage: "list.bullet.rectangle")
+            Toggle(isOn: $showFerries) {
+                Label("Ferries", systemImage: "ferry.fill")
             }
-            Section("Show on map") {
-                Toggle(isOn: $showBuses) {
-                    Label("Buses", systemImage: "bus.fill")
-                }
-                Toggle(isOn: $showTrains) {
-                    Label("Trains", systemImage: "train.side.front.car")
-                }
-                Toggle(isOn: $showFerries) {
-                    Label("Ferries", systemImage: "ferry.fill")
-                }
+        } label: {
+            tilePillLabel(
+                icon: anyFilterActive
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle",
+                text: MapTileKind.filters.label,
+                iconOnly: MapTileKind.filters.iconOnlyOnMap,
+            )
+        }
+        .accessibilityLabel("Filters")
+        .contextMenu { tileLayoutMenu }
+    }
+
+    private func tilePillLabel(icon: String, text: String, iconOnly: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+            if !iconOnly {
+                Text(text).fontWeight(.semibold)
             }
         }
+        .font(.subheadline)
+        .foregroundStyle(Color.primary)
+        .padding(.horizontal, iconOnly ? 11 : 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
+    }
+
+    @ViewBuilder
+    private var tileLayoutMenu: some View {
+        Picker("Move tiles", selection: $tilePositionRaw) {
+            ForEach(TilePosition.allCases) { pos in
+                Label(pos.label, systemImage: pos.iconName)
+                    .tag(pos.rawValue)
+            }
+        }
+        Picker("Layout", selection: $tileOrientationRaw) {
+            ForEach(TileOrientation.allCases) { o in
+                Label(o.label, systemImage: o.iconName)
+                    .tag(o.rawValue)
+            }
+        }
+        Button {
+            customizeShown = true
+        } label: {
+            Label("Reorder tiles…", systemImage: "list.bullet.rectangle")
+        }
+    }
+
+    private var anyFilterActive: Bool {
+        !showBuses || !showTrains || !showFerries
     }
 
     private func handleTileTap(_ tile: MapTileKind) {
@@ -219,6 +256,7 @@ struct NearbyStopsView: View {
         case .home: resetToHome()
         case .directions: directionsShown = true
         case .route: routeLookupShown = true
+        case .filters: break  // handled by Menu, not Button
         }
     }
 
