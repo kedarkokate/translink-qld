@@ -51,8 +51,8 @@ struct LocationPickerView: View {
                                 dismiss()
                             } label: {
                                 row(
-                                    icon: stop.isFerry ? "ferry.fill" : "bus.fill",
-                                    tint: stop.isFerry ? .blue : .red,
+                                    icon: stop.modeSymbolName,
+                                    tint: stop.modeTint,
                                     title: stop.stopName,
                                     subtitle: stop.stopCode.map { "Stop \($0)" },
                                 )

@@ -132,7 +132,7 @@ struct NearbyStopsView: View {
             Annotation(focused.stopName, coordinate: focused.coordinate, anchor: .center) {
                 FocusedStopMarker(
                     routeBadge: focusedRoute,
-                    symbol: Self.stopSymbol(for: focused),
+                    symbol: focused.modeSymbolName,
                 )
             }
             .tag(focused)
@@ -141,24 +141,10 @@ struct NearbyStopsView: View {
 
     private func marker(for stop: NearbyStop) -> some MapContent {
         Marker(stop.stopName,
-               systemImage: Self.stopSymbol(for: stop),
+               systemImage: stop.modeSymbolName,
                coordinate: stop.coordinate)
-            .tint(Self.stopTint(for: stop))
+            .tint(stop.modeTint)
             .tag(stop)
-    }
-
-    /// Priority: ferry → rail → bus. A stop served by multiple modes shows
-    /// the most distinctive one (rare in SEQ outside major interchanges).
-    static func stopSymbol(for stop: NearbyStop) -> String {
-        if stop.isFerry { return "ferry.fill" }
-        if stop.isRail { return "train.side.front.car" }
-        return "bus.fill"
-    }
-
-    static func stopTint(for stop: NearbyStop) -> Color {
-        if stop.isFerry { return .blue }
-        if stop.isRail { return .orange }
-        return .red
     }
 
     // MARK: Overlays
