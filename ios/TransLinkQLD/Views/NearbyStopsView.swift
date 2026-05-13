@@ -10,6 +10,7 @@ struct NearbyStopsView: View {
     @State private var selectedStop: NearbyStop?
     @State private var sheetShown = false
     @State private var routeLookupShown = false
+    @State private var directionsShown = false
     @State private var focusedStop: NearbyStop?
     @State private var focusedRoute: String?
     @State private var visibleRegion: MKCoordinateRegion?
@@ -44,6 +45,10 @@ struct NearbyStopsView: View {
                     }
                     .presentationDetents([.medium, .large])
                 }
+                .sheet(isPresented: $directionsShown) {
+                    DirectionsView()
+                        .presentationDetents([.medium, .large])
+                }
         }
     }
 
@@ -65,6 +70,7 @@ struct NearbyStopsView: View {
         .overlay(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 8) {
                 routePill
+                directionsPill
                 if let route = focusedRoute {
                     clearFocusPill(route)
                         .transition(.move(edge: .leading).combined(with: .opacity))
@@ -112,6 +118,22 @@ struct NearbyStopsView: View {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                 Text("Route").fontWeight(.semibold)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var directionsPill: some View {
+        Button {
+            directionsShown = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                Text("Directions").fontWeight(.semibold)
             }
             .font(.subheadline)
             .padding(.horizontal, 14).padding(.vertical, 10)

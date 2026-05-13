@@ -34,6 +34,56 @@ export async function findNearbyStops(
     .slice(0, limit);
 }
 
+export async function searchStops(
+  env: Env, query: string,
+  near: { lat: number; lon: number } | null,
+  limit: number,
+): Promise<StopWithDistance[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  // LIKE patterns: escape % _ \ so user input doesn't get treated as wildcard.
+  const escaped = trimmed.replace(/[%_\\]/g, "\\$&");
+  const namePattern = `%${escaped}%`;
+  const codePattern = `%${escaped}%`;
+
+  const { results } = await env.DB.prepare(
+    `SELECT stop_id, stop_code, stop_name, stop_lat, stop_lon,
+            location_type, parent_station, platform_code, route_types
+     FROM stops
+     WHERE location_type = 0
+       AND (stop_name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+            OR stop_code LIKE ?2 ESCAPE '\\')
+     LIMIT 200`
+  ).bind(namePattern, codePattern).all<Stop>();
+
+  if (!results || results.length === 0) return [];
+
+  const qLower = trimmed.toLowerCase();
+  type Scored = StopWithDistance & { _score: number };
+  const scored: Scored[] = results.map(s => {
+    const nameLower = s.stop_name.toLowerCase();
+    let score: number;
+    if (s.stop_code === trimmed) score = 100;
+    else if (s.stop_code?.endsWith(trimmed)) score = 80;       // matches "1013" → "001013"
+    else if (s.stop_code?.startsWith(trimmed)) score = 70;
+    else if (nameLower === qLower) score = 60;
+    else if (nameLower.startsWith(qLower)) score = 40;
+    else score = 10;
+    const distance = near
+      ? haversineMeters(near.lat, near.lon, s.stop_lat, s.stop_lon)
+      : Number.MAX_VALUE;
+    return { ...s, distance_m: distance, _score: score };
+  });
+
+  scored.sort((a, b) => {
+    if (b._score !== a._score) return b._score - a._score;
+    return a.distance_m - b.distance_m;
+  });
+
+  return scored.slice(0, limit).map(({ _score, ...rest }) => rest);
+}
+
 export async function getStop(env: Env, stopId: string): Promise<Stop | null> {
   return env.DB.prepare(
     `SELECT stop_id, stop_code, stop_name, stop_lat, stop_lon,
