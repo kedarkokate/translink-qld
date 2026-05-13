@@ -139,21 +139,28 @@ struct DirectionsView: View {
     }
 
     private func errorView(_ message: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(.orange)
+        VStack(spacing: 14) {
+            Image(systemName: "info.circle.fill")
+                .font(.system(size: 32))
+                .foregroundStyle(.blue)
             Text(message)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
+                .fixedSize(horizontal: false, vertical: true)
             if from != nil && to != nil {
                 Button {
                     openInAppleMaps()
                 } label: {
-                    Label("Open in Apple Maps", systemImage: "map")
+                    Label("Open in Apple Maps", systemImage: "map.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.horizontal)
             }
         }
     }
@@ -264,14 +271,30 @@ struct DirectionsView: View {
                 from: f.coordinate, to: t.coordinate,
             )
             if results.isEmpty {
-                error = "Apple Maps didn't return any transit routes for this trip. Try opening in Apple Maps for full step-by-step directions."
+                error = noRoutesMessage
             } else {
                 options = results
+            }
+        } catch let mkError as MKError {
+            switch mkError.code {
+            case .directionsNotFound, .placemarkNotFound:
+                self.error = noRoutesMessage
+            case .serverFailure, .loadingThrottled:
+                self.error = "Apple Maps is unavailable right now. Try again or open the trip in Apple Maps below."
+            default:
+                self.error = "Apple Maps returned an error (\(mkError.code.rawValue)).\n\n\(noRoutesMessage)"
             }
         } catch {
             self.error = error.localizedDescription
         }
     }
+
+    private let noRoutesMessage = """
+    Apple's public transit API didn't return a route in-app for this trip. \
+    This is common — the Apple Maps app itself has richer data and usually finds one.
+
+    Tap “Open in Apple Maps” below for full step-by-step directions.
+    """
 
     private func openInAppleMaps() {
         guard let f = from, let t = to else { return }
