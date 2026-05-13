@@ -11,8 +11,9 @@
 #   5. Install and launch the app on the booted Simulator.
 #
 # Usage:
-#   ./run-local.sh                              # default flow
-#   ./run-local.sh --location -27.466,153.026   # also seed Sim location
+#   ./run-local.sh                              # default: Sim located at Brisbane CBD
+#   ./run-local.sh --location -27.480,153.024   # use a custom location
+#   ./run-local.sh --no-location                # leave Sim's existing location alone
 #
 # The script is idempotent — re-running it just rebuilds the app and
 # reinstalls it; the existing wrangler dev process is reused.
@@ -30,12 +31,18 @@ PORT=8787
 SIM_FALLBACKS=("iPhone 17 Pro" "iPhone 17" "iPhone 16 Pro" "iPhone 16" "iPhone 15 Pro" "iPhone 15")
 
 # --- arg parsing ---------------------------------------------------------
-SET_LOCATION=""
+# The Simulator defaults to Apple Park; overwrite with Brisbane CBD so the
+# nearby/journey endpoints return useful results out of the box.
+DEFAULT_LOCATION="-27.4698,153.0251"
+SET_LOCATION="$DEFAULT_LOCATION"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --location)
       SET_LOCATION="${2:-}"; shift 2
       [[ -z "$SET_LOCATION" ]] && { echo "--location needs lat,lon"; exit 1; }
+      ;;
+    --no-location)
+      SET_LOCATION=""; shift
       ;;
     -h|--help)
       sed -n '2,/^$/{ /^#!/d; s/^# \{0,1\}//p; }' "$0"
@@ -97,7 +104,7 @@ else
 fi
 open -a Simulator
 
-# --- 3) (optional) set Sim location --------------------------------------
+# --- 3) set Sim location (Brisbane by default; --no-location skips) -----
 if [[ -n "$SET_LOCATION" ]]; then
   xcrun simctl location booted set "$SET_LOCATION"
   echo "✓ Sim location set to $SET_LOCATION"
