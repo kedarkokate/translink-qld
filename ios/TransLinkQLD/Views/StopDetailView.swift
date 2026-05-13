@@ -167,20 +167,14 @@ struct StopDetailView: View {
                 routeStopsRequest = RouteStopsRequest(shortName: s)
             }
         } label: {
-            HStack(spacing: 4) {
-                Text(text)
-                    .font(.system(size: prominent ? 15 : 13,
-                                  weight: .bold, design: .rounded))
-                if tappable {
-                    Image(systemName: "list.bullet")
-                        .font(.system(size: prominent ? 11 : 9, weight: .bold))
-                }
-            }
-            .padding(.horizontal, prominent ? 12 : 10)
-            .padding(.vertical, prominent ? 7 : 5)
-            .foregroundStyle(.white)
-            .background(routeColor(type), in: RoundedRectangle(cornerRadius: 8))
-            .frame(minWidth: prominent ? 56 : 48)
+            Text(text)
+                .font(.system(size: prominent ? 15 : 13,
+                              weight: .bold, design: .rounded))
+                .padding(.horizontal, prominent ? 12 : 10)
+                .padding(.vertical, prominent ? 7 : 5)
+                .foregroundStyle(.white)
+                .background(routeColor(type), in: RoundedRectangle(cornerRadius: 8))
+                .frame(minWidth: prominent ? 56 : 48)
         }
         .buttonStyle(.plain)
         .disabled(!tappable)

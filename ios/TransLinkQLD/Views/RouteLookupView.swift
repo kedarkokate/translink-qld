@@ -91,19 +91,15 @@ struct RouteLookupView: View {
                 Button {
                     routeStopsRequest = RouteStopsRequest(shortName: r.routeShortName)
                 } label: {
-                    HStack(spacing: 6) {
-                        Text(r.routeShortName)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .foregroundStyle(.white)
-                    .background(.blue, in: RoundedRectangle(cornerRadius: 8))
+                    Text(r.routeShortName)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .foregroundStyle(.white)
+                        .background(.blue, in: RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                Text("Tap badge for stops • Nearest stop:")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text("Nearest stop")
+                    .font(.subheadline).foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 4) {

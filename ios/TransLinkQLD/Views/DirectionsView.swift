@@ -275,20 +275,15 @@ struct DirectionsView: View {
                 routeStopsRequest = RouteStopsRequest(shortName: name)
             }
         } label: {
-            HStack(spacing: 4) {
-                Text(route.displayName)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                if route.routeShortName?.isEmpty == false {
-                    Image(systemName: "list.bullet")
-                        .font(.system(size: 10, weight: .bold))
-                }
-            }
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .foregroundStyle(.white)
-            .background(routeColor(route.routeType), in: RoundedRectangle(cornerRadius: 8))
-            .frame(minWidth: 48)
+            Text(route.displayName)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .foregroundStyle(.white)
+                .background(routeColor(route.routeType), in: RoundedRectangle(cornerRadius: 8))
+                .frame(minWidth: 48)
         }
         .buttonStyle(.plain)
+        .disabled(route.routeShortName?.isEmpty ?? true)
     }
 
     private func routeColor(_ rt: Int) -> Color {
