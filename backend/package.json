@@ -9,7 +9,7 @@
     "schema:apply:local": "wrangler d1 execute translink_qld --local --file=./schema.sql",
     "schema:apply:remote": "wrangler d1 execute translink_qld --remote --file=./schema.sql",
     "seed:local": "tsx scripts/ingest.ts --local",
-    "seed:remote": "tsx --env-file=.env scripts/seed-remote.ts",
+    "seed:remote": "tsx --env-file-if-exists=.env scripts/seed-remote.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
