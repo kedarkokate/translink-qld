@@ -198,6 +198,8 @@ export interface RouteStopsResult {
   route_short_name: string;
   route_long_name: string | null;
   route_type: number;
+  route_color: string | null;
+  route_text_color: string | null;
   directions: RouteDirection[];
 }
 
@@ -212,12 +214,15 @@ export async function getStopsForRoute(
 ): Promise<RouteStopsResult | null> {
   // One representative route record for naming + type metadata.
   const meta = await env.DB.prepare(
-    `SELECT route_short_name, route_long_name, route_type
+    `SELECT route_short_name, route_long_name, route_type,
+            route_color, route_text_color
      FROM routes WHERE route_short_name = ?1 COLLATE NOCASE LIMIT 1`
   ).bind(shortName).first<{
     route_short_name: string;
     route_long_name: string | null;
     route_type: number;
+    route_color: string | null;
+    route_text_color: string | null;
   }>();
   if (!meta) return null;
 
@@ -302,6 +307,8 @@ export async function getStopsForRoute(
     route_short_name: meta.route_short_name,
     route_long_name: meta.route_long_name,
     route_type: meta.route_type,
+    route_color: meta.route_color,
+    route_text_color: meta.route_text_color,
     directions: Array.from(byKey.values()),
   };
 }
@@ -462,6 +469,8 @@ export interface JourneyOption {
     route_short_name: string | null;
     route_long_name: string | null;
     route_type: number;
+    route_color: string | null;
+    route_text_color: string | null;
   };
   trip_id: string;
   headsign: string | null;
@@ -488,6 +497,7 @@ interface CandidateRow {
   route_id: string; trip_headsign: string | null;
   route_short_name: string | null; route_long_name: string | null;
   route_type: number;
+  route_color: string | null; route_text_color: string | null;
 }
 
 export async function planJourney(
@@ -530,7 +540,8 @@ export async function planJourney(
       sa.stop_id AS board_stop, sa.departure_time AS board_time,
       sb.stop_id AS alight_stop, sb.arrival_time AS alight_time,
       t.route_id, t.trip_headsign,
-      r.route_short_name, r.route_long_name, r.route_type
+      r.route_short_name, r.route_long_name, r.route_type,
+      r.route_color, r.route_text_color
     FROM stop_times sa
     JOIN stop_times sb
       ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
@@ -601,6 +612,8 @@ export async function planJourney(
         route_short_name: r.route_short_name,
         route_long_name: r.route_long_name,
         route_type: r.route_type,
+        route_color: r.route_color,
+        route_text_color: r.route_text_color,
       },
       trip_id: r.trip_id,
       headsign: r.trip_headsign,
@@ -651,6 +664,8 @@ interface ScheduledRow {
   route_short_name: string | null;
   route_long_name: string | null;
   route_type: number;
+  route_color: string | null;
+  route_text_color: string | null;
   trip_headsign: string | null;
   departure_time: string;  // HH:MM:SS (may be >24h)
   service_id: string;
@@ -699,6 +714,8 @@ export async function getDepartures(
       route_short_name: r.route_short_name,
       route_long_name: r.route_long_name,
       route_type: r.route_type,
+      route_color: r.route_color,
+      route_text_color: r.route_text_color,
       headsign: r.trip_headsign,
       scheduled_departure: new Date(scheduledMs).toISOString(),
       predicted_departure: delaySec != null
@@ -742,6 +759,7 @@ async function fetchScheduledRows(
   const { results } = await env.DB.prepare(
     `SELECT st.trip_id, st.stop_id, t.route_id,
             r.route_short_name, r.route_long_name, r.route_type,
+            r.route_color, r.route_text_color,
             t.trip_headsign, st.departure_time, t.service_id
      FROM stop_times st
      JOIN trips t ON t.trip_id = st.trip_id

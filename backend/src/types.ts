@@ -39,6 +39,8 @@ export interface Departure {
   route_short_name: string | null;
   route_long_name: string | null;
   route_type: number;
+  route_color: string | null;
+  route_text_color: string | null;
   headsign: string | null;
   scheduled_departure: string;  // ISO-8601 in stop's TZ
   predicted_departure: string | null;
