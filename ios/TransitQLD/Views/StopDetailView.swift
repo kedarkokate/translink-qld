@@ -47,7 +47,7 @@ struct StopDetailView: View {
             }
             .onDisappear { refreshTask?.cancel() }
             .sheet(item: $routeStopsRequest) { req in
-                RouteStopsView(shortName: req.shortName)
+                RouteStopsView(shortName: req.shortName, selectedHeadsign: req.headsign)
             }
         }
     }
@@ -235,7 +235,7 @@ struct StopDetailView: View {
         let fg: Color = isTrain ? (Color(gtfsHex: routeTextColor) ?? .white) : .white
         return Button {
             if let s = shortName, !s.isEmpty {
-                routeStopsRequest = RouteStopsRequest(shortName: s)
+                routeStopsRequest = RouteStopsRequest(shortName: s, headsign: headsign)
             }
         } label: {
             Text(label)

@@ -4,12 +4,27 @@ import SwiftUI
 /// for a given route short name (`"61"`, `"M2"`, ...).
 struct RouteStopsRequest: Identifiable, Hashable {
     let shortName: String
-    var id: String { shortName }
+    /// Optional headsign of the trip the user tapped, so the route header
+    /// pill reflects their chosen direction (e.g. "Ipswich" rather than
+    /// the colour-family fallback "Caboolture" on a through-route).
+    let headsign: String?
+    var id: String { shortName + "|" + (headsign ?? "") }
+
+    init(shortName: String, headsign: String? = nil) {
+        self.shortName = shortName
+        self.headsign = headsign
+    }
 }
 
 struct RouteStopsView: View {
     let shortName: String
+    let selectedHeadsign: String?
     @Environment(\.dismiss) private var dismiss
+
+    init(shortName: String, selectedHeadsign: String? = nil) {
+        self.shortName = shortName
+        self.selectedHeadsign = selectedHeadsign
+    }
 
     @State private var response: RouteStopsResponse?
     @State private var loading = false
@@ -98,6 +113,9 @@ struct RouteStopsView: View {
 
     private func headerLabel(_ r: RouteStopsResponse) -> String {
         if r.routeType == RouteType.rail.rawValue || r.routeType == RouteType.subway.rawValue {
+            // Honour the direction the user tapped first; otherwise fall back
+            // to the line family parsed from route_long_name.
+            if let h = trainPillLabel(headsign: selectedHeadsign) { return h }
             if let line = trainLine(longName: r.routeLongName, routeColor: r.routeColor) {
                 return line.pillName
             }

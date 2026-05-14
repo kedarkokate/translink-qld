@@ -54,7 +54,7 @@ struct DirectionsView: View {
                 }
             }
             .sheet(item: $routeStopsRequest) { req in
-                RouteStopsView(shortName: req.shortName)
+                RouteStopsView(shortName: req.shortName, selectedHeadsign: req.headsign)
             }
             .sheet(item: $pickerKind) { kind in
                 LocationPickerView(
@@ -272,7 +272,7 @@ struct DirectionsView: View {
     private func routeBadge(_ route: JourneyRoute, headsign: String? = nil) -> some View {
         Button {
             if let name = route.routeShortName, !name.isEmpty {
-                routeStopsRequest = RouteStopsRequest(shortName: name)
+                routeStopsRequest = RouteStopsRequest(shortName: name, headsign: headsign)
             }
         } label: {
             Text(routeLabel(route, headsign: headsign))

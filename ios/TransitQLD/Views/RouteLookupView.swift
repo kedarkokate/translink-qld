@@ -52,7 +52,7 @@ struct RouteLookupView: View {
             }
             .onAppear { inputFocused = true }
             .sheet(item: $routeStopsRequest) { req in
-                RouteStopsView(shortName: req.shortName)
+                RouteStopsView(shortName: req.shortName, selectedHeadsign: req.headsign)
             }
         }
     }
