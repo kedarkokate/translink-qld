@@ -196,7 +196,7 @@ struct DirectionsView: View {
     private func optionRow(_ option: JourneyOption, isBest: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                routeBadge(option.route)
+                routeBadge(option.route, headsign: option.headsign)
                 Text("\(option.totalMinutes) min")
                     .font(.title3.weight(.bold))
                     .monospacedDigit()
@@ -233,8 +233,8 @@ struct DirectionsView: View {
                 )
                 journeyStep(
                     icon: routeIcon(option.route.routeType),
-                    iconColor: routeColor(option.route.routeType),
-                    primary: "Catch \(option.route.displayName) at \(formatTime(option.board.effectiveTime))",
+                    iconColor: routeTint(option.route, headsign: option.headsign),
+                    primary: "Catch \(routeLabel(option.route, headsign: option.headsign)) at \(formatTime(option.board.effectiveTime))",
                     secondary: "Ride \(option.transitMinutes) min → arrive \(formatTime(option.alight.effectiveTime))",
                 )
                 journeyStep(
@@ -269,24 +269,65 @@ struct DirectionsView: View {
         }
     }
 
-    private func routeBadge(_ route: JourneyRoute) -> some View {
+    private func routeBadge(_ route: JourneyRoute, headsign: String? = nil) -> some View {
         Button {
             if let name = route.routeShortName, !name.isEmpty {
                 routeStopsRequest = RouteStopsRequest(shortName: name)
             }
         } label: {
-            Text(route.displayName)
+            Text(routeLabel(route, headsign: headsign))
                 .font(.system(size: 14, weight: .bold, design: .rounded))
+                .lineLimit(1).truncationMode(.tail).minimumScaleFactor(0.8)
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .foregroundStyle(.white)
-                .background(routeColor(route.routeType), in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(routeForeground(route))
+                .background(routeTint(route, headsign: headsign),
+                            in: RoundedRectangle(cornerRadius: 8))
                 .frame(minWidth: 48)
         }
         .buttonStyle(.plain)
         .disabled(route.routeShortName?.isEmpty ?? true)
     }
 
-    private func routeColor(_ rt: Int) -> Color {
+    /// Pill / step label for a journey route. Trains get the destination /
+    /// line name; other modes keep their existing short name.
+    private func routeLabel(_ route: JourneyRoute, headsign: String?) -> String {
+        let isTrain = (route.routeType == RouteType.rail.rawValue
+                       || route.routeType == RouteType.subway.rawValue)
+        if isTrain {
+            if let h = trainPillLabel(headsign: headsign) { return h }
+            if let line = trainLine(longName: route.routeLongName,
+                                    routeColor: route.routeColor) {
+                return line.pillName
+            }
+        }
+        return route.displayName
+    }
+
+    /// Background / icon tint for a journey route. Trains use the GTFS
+    /// `route_color` (or the mapped line colour) so each line gets its
+    /// official TransLink hue.
+    private func routeTint(_ route: JourneyRoute, headsign: String?) -> Color {
+        let isTrain = (route.routeType == RouteType.rail.rawValue
+                       || route.routeType == RouteType.subway.rawValue)
+        if isTrain {
+            if let c = Color(gtfsHex: route.routeColor) { return c }
+            if let line = trainLine(longName: route.routeLongName,
+                                    routeColor: route.routeColor),
+               let c = Color(gtfsHex: line.hex) { return c }
+        }
+        return defaultRouteColor(route.routeType)
+    }
+
+    /// Foreground (text) colour for the pill — honours GTFS `route_text_color`
+    /// when present so yellow Airport / Gold Coast pills get black text.
+    private func routeForeground(_ route: JourneyRoute) -> Color {
+        let isTrain = (route.routeType == RouteType.rail.rawValue
+                       || route.routeType == RouteType.subway.rawValue)
+        if isTrain, let c = Color(gtfsHex: route.routeTextColor) { return c }
+        return .white
+    }
+
+    private func defaultRouteColor(_ rt: Int) -> Color {
         switch RouteType(rawValue: rt) {
         case .bus: return .blue
         case .rail, .subway: return .indigo

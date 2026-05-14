@@ -81,6 +81,9 @@ struct StopDetailView: View {
                 byKey[key] = DepartureGroup(
                     key: key, badge: dep.routeBadge,
                     routeShortName: dep.routeShortName,
+                    routeLongName: dep.routeLongName,
+                    routeColor: dep.routeColor,
+                    routeTextColor: dep.routeTextColor,
                     headsign: dep.headsign, routeType: dep.routeType, times: [],
                 )
                 keyOrder.append(key)
@@ -104,7 +107,11 @@ struct StopDetailView: View {
                         .foregroundStyle(.secondary)
                     HStack(alignment: .center, spacing: 14) {
                         routeBadge(text: peek.routeBadge, type: peek.routeType,
-                                   prominent: true, shortName: peek.routeShortName)
+                                   prominent: true, shortName: peek.routeShortName,
+                                   routeColor: peek.routeColor,
+                                   routeTextColor: peek.routeTextColor,
+                                   longName: peek.routeLongName,
+                                   headsign: peek.headsign)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(peek.headsign ?? peek.routeLongName ?? "—")
                                 .font(.subheadline).lineLimit(2)
@@ -142,7 +149,11 @@ struct StopDetailView: View {
     private func upcomingRow(_ group: DepartureGroup) -> some View {
         HStack(alignment: .center, spacing: 14) {
             routeBadge(text: group.badge, type: group.routeType, prominent: true,
-                       shortName: group.routeShortName)
+                       shortName: group.routeShortName,
+                       routeColor: group.routeColor,
+                       routeTextColor: group.routeTextColor,
+                       longName: group.routeLongName,
+                       headsign: group.headsign)
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.headsign ?? "—")
                     .font(.subheadline)
@@ -186,7 +197,11 @@ struct StopDetailView: View {
             ) {
                 ForEach(routes) { route in
                     routeBadge(text: route.displayName, type: route.routeType,
-                               prominent: false, shortName: route.routeShortName)
+                               prominent: false, shortName: route.routeShortName,
+                               routeColor: route.routeColor,
+                               routeTextColor: route.routeTextColor,
+                               longName: route.routeLongName,
+                               headsign: nil)
                 }
             }
         }
@@ -196,27 +211,50 @@ struct StopDetailView: View {
 
     private func routeBadge(
         text: String, type: Int, prominent: Bool, shortName: String?,
+        routeColor: String? = nil, routeTextColor: String? = nil,
+        longName: String? = nil, headsign: String? = nil,
     ) -> some View {
         let tappable = (shortName?.isEmpty == false)
+        let isTrain = (type == RouteType.rail.rawValue || type == RouteType.subway.rawValue)
+        let label: String = {
+            guard isTrain else { return text }
+            if let h = trainPillLabel(headsign: headsign) { return h }
+            if let line = trainLine(longName: longName, routeColor: routeColor) {
+                return line.pillName
+            }
+            return text
+        }()
+        let bg: Color = {
+            if isTrain {
+                if let c = Color(gtfsHex: routeColor) { return c }
+                if let line = trainLine(longName: longName, routeColor: routeColor),
+                   let c = Color(gtfsHex: line.hex) { return c }
+            }
+            return defaultRouteColor(type)
+        }()
+        let fg: Color = isTrain ? (Color(gtfsHex: routeTextColor) ?? .white) : .white
         return Button {
             if let s = shortName, !s.isEmpty {
                 routeStopsRequest = RouteStopsRequest(shortName: s)
             }
         } label: {
-            Text(text)
+            Text(label)
                 .font(.system(size: prominent ? 15 : 13,
                               weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .minimumScaleFactor(0.8)
                 .padding(.horizontal, prominent ? 12 : 10)
                 .padding(.vertical, prominent ? 7 : 5)
-                .foregroundStyle(.white)
-                .background(routeColor(type), in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(fg)
+                .background(bg, in: RoundedRectangle(cornerRadius: 8))
                 .frame(minWidth: prominent ? 56 : 48)
         }
         .buttonStyle(.plain)
         .disabled(!tappable)
     }
 
-    private func routeColor(_ rt: Int) -> Color {
+    private func defaultRouteColor(_ rt: Int) -> Color {
         switch RouteType(rawValue: rt) {
         case .bus: .blue
         case .rail, .subway: .indigo
@@ -294,6 +332,9 @@ struct DepartureGroup: Identifiable {
     var id: String { key }
     let badge: String
     let routeShortName: String?
+    let routeLongName: String?
+    let routeColor: String?
+    let routeTextColor: String?
     let headsign: String?
     let routeType: Int
     var times: [Departure]

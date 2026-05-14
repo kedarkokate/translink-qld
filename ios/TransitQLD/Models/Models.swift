@@ -118,6 +118,8 @@ struct Departure: Codable, Identifiable, Hashable {
     let routeShortName: String?
     let routeLongName: String?
     let routeType: Int
+    let routeColor: String?
+    let routeTextColor: String?
     let headsign: String?
     let scheduledDeparture: Date
     let predictedDeparture: Date?
@@ -135,6 +137,8 @@ struct Departure: Codable, Identifiable, Hashable {
         case routeShortName = "route_short_name"
         case routeLongName = "route_long_name"
         case routeType = "route_type"
+        case routeColor = "route_color"
+        case routeTextColor = "route_text_color"
         case headsign
         case scheduledDeparture = "scheduled_departure"
         case predictedDeparture = "predicted_departure"
@@ -206,6 +210,8 @@ struct JourneyRoute: Codable, Hashable {
     let routeShortName: String?
     let routeLongName: String?
     let routeType: Int
+    let routeColor: String?
+    let routeTextColor: String?
 
     var displayName: String { routeShortName ?? routeLongName ?? routeId }
 
@@ -214,6 +220,8 @@ struct JourneyRoute: Codable, Hashable {
         case routeShortName = "route_short_name"
         case routeLongName = "route_long_name"
         case routeType = "route_type"
+        case routeColor = "route_color"
+        case routeTextColor = "route_text_color"
     }
 }
 
@@ -245,12 +253,16 @@ struct RouteStopsResponse: Codable {
     let routeShortName: String
     let routeLongName: String?
     let routeType: Int
+    let routeColor: String?
+    let routeTextColor: String?
     let directions: [RouteDirection]
 
     enum CodingKeys: String, CodingKey {
         case routeShortName = "route_short_name"
         case routeLongName = "route_long_name"
         case routeType = "route_type"
+        case routeColor = "route_color"
+        case routeTextColor = "route_text_color"
         case directions
     }
 }

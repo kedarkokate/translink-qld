@@ -55,11 +55,12 @@ struct RouteStopsView: View {
             if let longName = r.routeLongName {
                 Section {
                     HStack(spacing: 12) {
-                        Text(r.routeShortName)
+                        Text(headerLabel(r))
                             .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .lineLimit(1).truncationMode(.tail).minimumScaleFactor(0.8)
                             .padding(.horizontal, 12).padding(.vertical, 6)
-                            .foregroundStyle(.white)
-                            .background(routeColor(r.routeType),
+                            .foregroundStyle(foregroundForRoute(r))
+                            .background(tintForRoute(r),
                                         in: RoundedRectangle(cornerRadius: 8))
                         Text(longName)
                             .font(.subheadline)
@@ -69,7 +70,7 @@ struct RouteStopsView: View {
             }
 
             ForEach(r.directions) { dir in
-                Section(header: directionHeader(dir, type: r.routeType)) {
+                Section(header: directionHeader(dir, response: r)) {
                     ForEach(dir.stops) { stop in
                         Button {
                             selectedStop = stop.asNearbyStop()
@@ -85,14 +86,48 @@ struct RouteStopsView: View {
     }
 
     @ViewBuilder
-    private func directionHeader(_ dir: RouteDirection, type: Int) -> some View {
+    private func directionHeader(_ dir: RouteDirection, response: RouteStopsResponse) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: routeIcon(type))
-                .foregroundStyle(routeColor(type))
-            Text("Towards \(dir.headsign ?? "—")")
+            Image(systemName: routeIcon(response.routeType))
+                .foregroundStyle(tintForRoute(response))
+            Text("Towards \(directionLabel(dir, type: response.routeType))")
                 .font(.subheadline.weight(.semibold))
                 .textCase(nil)
         }
+    }
+
+    private func headerLabel(_ r: RouteStopsResponse) -> String {
+        if r.routeType == RouteType.rail.rawValue || r.routeType == RouteType.subway.rawValue {
+            if let line = trainLine(longName: r.routeLongName, routeColor: r.routeColor) {
+                return line.pillName
+            }
+        }
+        return r.routeShortName
+    }
+
+    private func directionLabel(_ dir: RouteDirection, type: Int) -> String {
+        guard let headsign = dir.headsign, !headsign.isEmpty else { return "—" }
+        if type == RouteType.rail.rawValue || type == RouteType.subway.rawValue {
+            return trainPillLabel(headsign: headsign) ?? headsign
+        }
+        return headsign
+    }
+
+    private func foregroundForRoute(_ r: RouteStopsResponse) -> Color {
+        if r.routeType == RouteType.rail.rawValue || r.routeType == RouteType.subway.rawValue,
+           let c = Color(gtfsHex: r.routeTextColor) {
+            return c
+        }
+        return .white
+    }
+
+    private func tintForRoute(_ r: RouteStopsResponse) -> Color {
+        if r.routeType == RouteType.rail.rawValue || r.routeType == RouteType.subway.rawValue {
+            if let c = Color(gtfsHex: r.routeColor) { return c }
+            if let line = trainLine(longName: r.routeLongName, routeColor: r.routeColor),
+               let c = Color(gtfsHex: line.hex) { return c }
+        }
+        return routeColor(r.routeType)
     }
 
     @ViewBuilder
