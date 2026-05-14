@@ -230,19 +230,45 @@ interface D1Client {
 }
 
 function makeClient(endpoint: string, token: string): D1Client {
+  const MAX_RETRIES = 6;
   async function call(sql: string, params: unknown[]) {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ sql, params }),
-    });
-    if (!res.ok) {
-      throw new Error(`D1 HTTP ${res.status}: ${await res.text()}`);
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ sql, params }),
+        });
+        if (!res.ok) {
+          // HTTP 5xx — transient on Cloudflare's side; retry. 4xx is the
+          // caller's fault; surface immediately.
+          if (res.status >= 500 && attempt < MAX_RETRIES - 1) {
+            lastErr = new Error(`D1 HTTP ${res.status}`);
+            await sleep(backoffMs(attempt));
+            continue;
+          }
+          throw new Error(`D1 HTTP ${res.status}: ${await res.text()}`);
+        }
+        return await res.json() as { result: { results: unknown[] }[]; success: boolean };
+      } catch (err) {
+        lastErr = err;
+        // Sockets close mid-stream on long HTTP/2 sessions to Cloudflare —
+        // retry on these transient network failures.
+        const code = (err as { cause?: { code?: string }; code?: string })?.cause?.code
+                   ?? (err as { code?: string })?.code;
+        const isTransient = code === "UND_ERR_SOCKET"
+          || code === "UND_ERR_CONNECT_TIMEOUT"
+          || code === "ECONNRESET"
+          || /fetch failed/i.test(String((err as Error)?.message));
+        if (!isTransient || attempt === MAX_RETRIES - 1) throw err;
+        await sleep(backoffMs(attempt));
+      }
     }
-    return await res.json() as { result: { results: unknown[] }[]; success: boolean };
+    throw lastErr;
   }
   return {
     exec: async (sql, params = []) => { await call(sql, params); },
@@ -251,6 +277,15 @@ function makeClient(endpoint: string, token: string): D1Client {
       return (json.result[0]?.results ?? []) as T[];
     },
   };
+}
+
+function backoffMs(attempt: number): number {
+  // 500ms, 1s, 2s, 4s, 8s, 16s
+  return 500 * Math.pow(2, attempt);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
 }
 
 async function readProgress(d1: D1Client): Promise<Progress> {
