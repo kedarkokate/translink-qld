@@ -10,7 +10,7 @@ iOS app + Cloudflare Workers backend for the TransLink South East Queensland ope
 TransLinkQLD/
 ├── backend/         Cloudflare Worker (TypeScript) — REST API + GTFS ingest
 │   ├── src/         Worker entry, routes, GTFS-RT decode, D1 queries
-│   ├── scripts/     One-shot GTFS static ingest (run from your laptop)
+│   ├── scripts/     GTFS static seeder + status check (laptop-driven)
 │   ├── schema.sql   D1 schema (GTFS tables)
 │   └── wrangler.toml
 └── ios/             SwiftUI app (iOS 17+)
@@ -31,7 +31,7 @@ The current machine has **none of these** installed yet.
    npm install -g wrangler
    ```
 
-4. **Cloudflare account** — free tier is fine for everything except cron triggers (requires the $5/mo Workers Paid plan, but you can skip that and run the daily ingest from your laptop or CI).
+4. **Cloudflare account** — the $5/mo Workers Paid plan is recommended (50M D1 writes/month comfortably covers the GTFS seed). The free tier works for app traffic but its 100K daily write cap makes seeding impractical.
 
 ## Backend setup
 
@@ -62,27 +62,22 @@ npm run schema:apply:remote      # when ready to deploy
 
 ### 4. Seed GTFS static data
 
-For local dev:
-
-```bash
-npm run seed:local
-```
-
-For your live D1, create `backend/.env` with:
+Create `backend/.env` with:
 
 ```
-CF_ACCOUNT_ID=<your account id, top-right of dashboard>
-CF_API_TOKEN=<token with D1:Edit permission>
-CF_D1_DATABASE_ID=<same UUID as wrangler.toml>
+D1_ACCOUNT_ID=<your account id, top-right of dashboard>
+D1_API_TOKEN=<token with D1:Edit permission>
+D1_DATABASE_ID=<same UUID as wrangler.toml>
 ```
 
 Then:
 
 ```bash
-npm run seed:remote
+npm run seed           # full feed in one pass; ~30–45 min
+npm run seed:status    # row counts: remote vs source, per table
 ```
 
-The seed downloads `SEQ_GTFS.zip` (~50 MB), parses each CSV, and bulk-inserts in 500-row batches. Expect 10–30 minutes for the full feed (stop_times.txt is several million rows). Re-running is safe — each table is truncated first.
+The seed downloads `SEQ_GTFS.zip` (~50 MB), parses each CSV, and dispatches INSERT batches to D1 with bounded concurrency. It writes a `backend/.seed-state.json` checkpoint every 50k rows — if the run is interrupted (Ctrl-C, lost connection, laptop sleep), rerunning `npm run seed` picks up exactly where it left off. Re-wipe + restart from scratch with `npm run seed -- --restart`.
 
 ### 5. Run / deploy
 
@@ -118,7 +113,7 @@ In Xcode: pick a Simulator (e.g. iPhone 15 Pro), ⌘R to run. The first launch w
 
 ## Known limitations / next steps
 
-- **Bulk ingest currently runs from your laptop.** The Worker's `scheduled` handler just records that the cron fired — it doesn't yet do the actual ingest. To automate: either (a) run `seed:remote` from a GitHub Actions cron, or (b) move the ingest into a Workers + Queues pipeline (R2 stages the zip, a queue consumer processes one GTFS file per message — needed because a single Worker invocation can't process millions of stop_times rows within CPU limits).
+- **Bulk ingest is laptop-driven by design.** Run `npm run seed` whenever TransLink republishes the feed (typically weekly). The script parallelises writes against D1's REST API and finishes in ~30–45 min. Use `npm run seed:status` to verify counts. Moving the ingest server-side would mean a Workers + Queues + R2 pipeline (one queue message per GTFS file) — out of scope while the laptop flow works.
 - **No trip planner.** v1 is "what's near me, what's leaving next." A→B routing needs either an external service (OpenTripPlanner) or a graph-search engine on top of GTFS.
 - **No alerts feed parsing yet.** The TransLink GTFS-RT Alerts URL is wired into `wrangler.toml` but not surfaced through an endpoint.
 - **No offline mode.** Every screen depends on the Worker being reachable. A future v1.1 could cache the last `nearby` and `departures` responses in `URLCache` + `Disk`.

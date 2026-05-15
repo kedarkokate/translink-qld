@@ -134,18 +134,4 @@ app.get("/v1/vehicles", async c => {
   return c.json({ vehicles: filtered });
 });
 
-export default {
-  fetch: app.fetch,
-
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    // Daily GTFS refresh. The actual ingest is heavy (large file, many rows)
-    // so production deployments should run `npm run seed:remote` from CI
-    // instead. This handler currently records that the cron fired — wire in
-    // a proper ingest pipeline (R2 staging + chunked D1 inserts) when ready.
-    ctx.waitUntil(env.DB.prepare(
-      `INSERT INTO feed_meta(key, value, updated_at)
-       VALUES('last_cron_fire', ?1, ?2)
-       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`
-    ).bind(new Date().toISOString(), Math.floor(Date.now() / 1000)).run());
-  },
-};
+export default app;

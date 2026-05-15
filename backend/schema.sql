@@ -1,6 +1,6 @@
 -- TransLink SEQ GTFS schema for Cloudflare D1
 -- Mirrors the GTFS static spec. Columns we don't query are omitted to keep DB lean.
--- Re-running this file is safe: it drops and recreates everything except feed_meta.
+-- Re-running this file is safe: it drops and recreates every table.
 
 DROP TABLE IF EXISTS stop_times;
 DROP TABLE IF EXISTS trips;
@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS calendar;
 DROP TABLE IF EXISTS routes;
 DROP TABLE IF EXISTS stops;
 DROP TABLE IF EXISTS agencies;
+DROP TABLE IF EXISTS feed_meta;
 
 CREATE TABLE agencies (
   agency_id    TEXT PRIMARY KEY,
@@ -92,7 +93,7 @@ CREATE INDEX idx_stoptimes_trip ON stop_times(trip_id);
 
 -- Tracks the most recent successful ingest. Useful for the iOS app
 -- to display "schedule data current as of...".
-CREATE TABLE IF NOT EXISTS feed_meta (
+CREATE TABLE feed_meta (
   key        TEXT PRIMARY KEY,
   value      TEXT NOT NULL,
   updated_at INTEGER NOT NULL

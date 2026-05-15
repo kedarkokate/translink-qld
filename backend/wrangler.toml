@@ -3,10 +3,6 @@ main = "src/index.ts"
 compatibility_date = "2026-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Daily GTFS static refresh at 02:30 UTC (~12:30 PM Brisbane)
-[triggers]
-crons = ["30 2 * * *"]
-
 [[d1_databases]]
 binding = "DB"
 database_name = "translink_qld"
@@ -15,12 +11,6 @@ database_id = "4282adc2-f3f6-409c-a3f4-7382872ff110"
 [[kv_namespaces]]
 binding = "RT_CACHE"
 id = "81f9f0a72cba43ca86547f2598459f65"
-
-# R2 reserved for future Worker-side ingest pipeline. Enable R2 in the
-# Cloudflare dashboard, then re-add:
-# [[r2_buckets]]
-# binding = "GTFS_BUCKET"
-# bucket_name = "translink-qld-gtfs"
 
 [vars]
 TRANSLINK_GTFS_URL = "https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip"
