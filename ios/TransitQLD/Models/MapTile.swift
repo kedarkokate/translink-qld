@@ -8,6 +8,7 @@ enum MapTileKind: String, Identifiable, CaseIterable, Codable {
     case directions
     case route
     case filters
+    case favourites
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ enum MapTileKind: String, Identifiable, CaseIterable, Codable {
         case .directions: return "Directions"
         case .route: return "Route"
         case .filters: return "Filters"
+        case .favourites: return "Favourites"
         }
     }
 
@@ -26,6 +28,7 @@ enum MapTileKind: String, Identifiable, CaseIterable, Codable {
         case .directions: return "arrow.triangle.turn.up.right.diamond.fill"
         case .route: return "magnifyingglass"
         case .filters: return "line.3.horizontal.decrease.circle"
+        case .favourites: return "star.fill"
         }
     }
 
@@ -33,14 +36,14 @@ enum MapTileKind: String, Identifiable, CaseIterable, Codable {
     var iconOnlyOnMap: Bool {
         switch self {
         case .home: return true
-        case .directions, .route, .filters: return false
+        case .directions, .route, .filters, .favourites: return false
         }
     }
 }
 
 enum MapTileOrder {
     /// Default tile sequence on first launch.
-    static let defaultOrder: [MapTileKind] = [.home, .directions, .route, .filters]
+    static let defaultOrder: [MapTileKind] = [.home, .directions, .route, .favourites, .filters]
 
     static let storageKey = "map_tile_order_v1"
     static let defaultRaw: String = defaultOrder.map(\.rawValue).joined(separator: ",")

@@ -11,6 +11,7 @@ struct NearbyStopsView: View {
     @State private var sheetShown = false
     @State private var routeLookupShown = false
     @State private var directionsShown = false
+    @State private var favouritesShown = false
     @State private var customizeShown = false
     @State private var focusedStop: NearbyStop?
     @State private var focusedRoute: String?
@@ -54,6 +55,10 @@ struct NearbyStopsView: View {
                 }
                 .sheet(isPresented: $directionsShown) {
                     DirectionsView()
+                        .presentationDetents([.medium, .large])
+                }
+                .sheet(isPresented: $favouritesShown) {
+                    FavouritesView()
                         .presentationDetents([.medium, .large])
                 }
                 .sheet(isPresented: $customizeShown) {
@@ -275,6 +280,7 @@ struct NearbyStopsView: View {
         case .home: resetToHome()
         case .directions: directionsShown = true
         case .route: routeLookupShown = true
+        case .favourites: favouritesShown = true
         case .filters: break  // handled by Menu, not Button
         }
     }

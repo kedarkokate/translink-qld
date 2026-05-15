@@ -9,6 +9,9 @@
 #   3. Boot an iOS Simulator (existing one or first available iPhone model).
 #   4. Build the Debug configuration of the iOS app.
 #   5. Install and launch the app on the booted Simulator.
+#   6. Force the Sim's CoreLocation to Brisbane after launch (override only
+#      affects the simulator — on real hardware the app uses the device's
+#      actual GPS, no toggle needed).
 #
 # Usage:
 #   ./run-local.sh                              # default: Sim located at Brisbane CBD
@@ -139,6 +142,22 @@ echo "▸ installing $APP"
 xcrun simctl terminate booted "$BUNDLE_ID" 2>/dev/null || true
 xcrun simctl install booted "$APP"
 xcrun simctl launch booted "$BUNDLE_ID"
+
+# --- 6) re-pin Sim location after launch --------------------------------
+# Setting the location before launch isn't always sticky: the freshly-launched
+# CLLocationManager can latch onto a cached Apple Park fix before our earlier
+# `simctl location set` propagates. Push it once more now that the app is
+# alive so the first user-location callback fires inside Brisbane.
+#
+# Production builds running on a real iPhone never enter this branch — the
+# script only touches the simulator. The app itself has no hardcoded location;
+# `LocationManager` always uses CoreLocation, which on hardware means real
+# GPS / Wi-Fi triangulation.
+if [[ -n "$SET_LOCATION" ]]; then
+  sleep 1
+  xcrun simctl location booted set "$SET_LOCATION"
+  echo "✓ Sim location re-pinned to $SET_LOCATION after launch"
+fi
 
 cat <<EOF
 

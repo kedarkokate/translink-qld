@@ -3,6 +3,7 @@ import SwiftUI
 struct StopDetailView: View {
     let stop: NearbyStop
 
+    @Environment(FavouritesStore.self) private var favourites
     @State private var detail: StopDetail?
     @State private var departures: [Departure] = []
     @State private var nextServicePeek: Departure?
@@ -56,15 +57,42 @@ struct StopDetailView: View {
 
     @ViewBuilder
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(stop.stopName)
-                .font(.largeTitle).fontWeight(.bold)
-                .fixedSize(horizontal: false, vertical: true)
-            if let code = stop.stopCode {
-                Text("Stop \(code)")
-                    .font(.subheadline).foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(stop.stopName)
+                    .font(.largeTitle).fontWeight(.bold)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let code = stop.stopCode {
+                    Text("Stop \(code)")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
             }
+            Spacer(minLength: 4)
+            favouriteStopButton
         }
+    }
+
+    private var favouriteStopButton: some View {
+        let isFav = favourites.isStopFavourite(stopId: stop.stopId)
+        return Button {
+            if isFav {
+                favourites.removeStop(stopId: stop.stopId)
+            } else {
+                favourites.addStop(FavouriteStop(
+                    stopId: stop.stopId,
+                    stopName: stop.stopName,
+                    stopCode: stop.stopCode,
+                    routeTypes: stop.routeTypes,
+                    lat: stop.stopLat, lon: stop.stopLon,
+                ))
+            }
+        } label: {
+            Image(systemName: isFav ? "star.fill" : "star")
+                .font(.title2)
+                .foregroundStyle(isFav ? .yellow : .secondary)
+        }
+        .accessibilityLabel(isFav ? "Remove favourite stop" : "Favourite this stop")
+        .buttonStyle(.plain)
     }
 
     // MARK: Upcoming departures (grouped by route + headsign)
@@ -172,8 +200,102 @@ struct StopDetailView: View {
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
+            favouriteServiceMenu(group)
         }
         .padding(.vertical, 6)
+    }
+
+    /// Trailing-edge star on an upcoming row. Tapping it opens a menu with
+    /// two add/remove options: (a) the broader route-at-stop favourite (any
+    /// time of this route + direction), and (b) the time-specific favourite
+    /// pinned to the next scheduled occurrence's clock time. The star is
+    /// filled whenever either kind is active.
+    @ViewBuilder
+    private func favouriteServiceMenu(_ group: DepartureGroup) -> some View {
+        let routeName = group.routeShortName ?? ""
+        let next = group.times.first
+        let timeSeconds: Int? = next?.brisbaneSecondsSinceMidnight
+
+        let routeFav = favourites.service(
+            matching: stop.stopId, route: routeName,
+            headsign: group.headsign, secondsSinceMidnight: nil,
+        )
+        let timeFav: FavouriteService? = timeSeconds.flatMap { seconds in
+            favourites.service(
+                matching: stop.stopId, route: routeName,
+                headsign: group.headsign, secondsSinceMidnight: seconds,
+            )
+        }
+        let anyFav = (routeFav != nil) || (timeFav != nil)
+
+        Menu {
+            // (a) Route-at-stop favourite (any time).
+            Button {
+                if let fav = routeFav {
+                    favourites.removeService(id: fav.id)
+                } else {
+                    favourites.addService(buildFavourite(group: group, seconds: nil))
+                }
+            } label: {
+                Label(
+                    routeFav != nil
+                        ? "Remove route favourite"
+                        : "Favourite this route at this stop",
+                    systemImage: routeFav != nil ? "star.slash" : "star",
+                )
+            }
+
+            // (b) Time-specific favourite (e.g. the 07:42).
+            if let seconds = timeSeconds, let nextDep = next {
+                let nextTimeLabel = nextDep.scheduledDeparture.formatted(
+                    date: .omitted, time: .shortened,
+                )
+                Button {
+                    if let fav = timeFav {
+                        favourites.removeService(id: fav.id)
+                    } else {
+                        favourites.addService(
+                            buildFavourite(group: group, seconds: seconds),
+                        )
+                    }
+                } label: {
+                    Label(
+                        timeFav != nil
+                            ? "Remove \(nextTimeLabel) favourite"
+                            : "Favourite the \(nextTimeLabel) departure",
+                        systemImage: timeFav != nil ? "clock.badge.xmark" : "clock",
+                    )
+                }
+            }
+        } label: {
+            Image(systemName: anyFav ? "star.fill" : "star")
+                .font(.system(size: 18))
+                .foregroundStyle(anyFav ? .yellow : .secondary)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Favourite options")
+    }
+
+    /// Build a `FavouriteService` from the row's group context. Pass `nil`
+    /// for `seconds` to favourite the route at the stop (any departure),
+    /// or a value to pin to a specific scheduled time-of-day.
+    private func buildFavourite(group: DepartureGroup, seconds: Int?) -> FavouriteService {
+        FavouriteService(
+            stopId: stop.stopId, stopName: stop.stopName,
+            stopCode: stop.stopCode,
+            stopLat: stop.stopLat, stopLon: stop.stopLon,
+            routeTypes: stop.routeTypes,
+            routeShortName: group.routeShortName ?? "",
+            routeLongName: group.routeLongName,
+            routeType: group.routeType,
+            routeColor: group.routeColor,
+            routeTextColor: group.routeTextColor,
+            headsign: group.headsign,
+            scheduledSecondsSinceMidnight: seconds,
+        )
     }
 
     private func formatTimes(_ deps: [Departure]) -> String {
