@@ -1,0 +1,56 @@
+name: Seed D1 (daily if-changed)
+
+# Daily cron at 20:00 UTC = 06:00 Brisbane (UTC+10, no DST). On most days
+# this exits in ~2 minutes — install Node deps, HEAD the GTFS URL, see the
+# ETag matches, done. When TransLink republishes, the same workflow kicks
+# off the full seed against D1 (~2–3 h, comfortably inside the 6 h job cap).
+#
+# Also exposes a manual button so you can fire a run on demand (e.g. to
+# verify the workflow after rotating secrets) without waiting for the cron.
+
+on:
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force full seed even if ETag matches"
+        type: boolean
+        default: false
+
+# A full seed takes hours. If another run is scheduled while one is still
+# in flight, queue it instead of cancelling — never kill a running seed.
+concurrency:
+  group: seed-d1
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      - name: Seed
+        env:
+          D1_ACCOUNT_ID: ${{ secrets.D1_ACCOUNT_ID }}
+          D1_API_TOKEN: ${{ secrets.D1_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "→ workflow_dispatch with force=true: full seed"
+            npm run seed
+          else
+            npm run seed:if-changed
+          fi
