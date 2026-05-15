@@ -40,4 +40,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: au.com.transitqld.app
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
+        DEVELOPMENT_TEAM: 62FZ5PWUFZ
+        CODE_SIGN_STYLE: Automatic
