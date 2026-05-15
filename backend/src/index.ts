@@ -7,10 +7,17 @@ import {
   planJourney, getStopsForRoute, findSchoolRoutesNear,
 } from "./queries";
 import { getVehiclePositions } from "./gtfsRt";
+import { PRIVACY_HTML } from "./privacy";
 
 const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", cors({ origin: "*", maxAge: 600 }));
+
+app.get("/privacy", c =>
+  c.html(PRIVACY_HTML, 200, {
+    "Cache-Control": "public, max-age=3600",
+  }),
+);
 
 app.get("/v1/health", async c => {
   const meta = await c.env.DB.prepare(

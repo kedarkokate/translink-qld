@@ -10,6 +10,13 @@ struct TilesCustomizationView: View {
         self._order = State(initialValue: MapTileOrder.decode(rawOrder.wrappedValue))
     }
 
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+    private var appBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -31,9 +38,32 @@ struct TilesCustomizationView: View {
                 } footer: {
                     Text("Long-press a tile on the map to reopen this customizer.")
                 }
+
+                Section {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text("\(appVersion) (\(appBuild))")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    Link(destination: URL(string: "https://translink-qld.kedarkokate.workers.dev/privacy")!) {
+                        HStack {
+                            Text("Privacy Policy")
+                            Spacer()
+                            Image(systemName: "arrow.up.right.square")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("About TransitQLD")
+                        .textCase(nil)
+                } footer: {
+                    Text("Schedule and realtime transit data published by the Queensland Department of Transport and Main Roads under CC-BY 4.0 via TransLink Open Data.")
+                }
             }
             .environment(\.editMode, .constant(.active))
-            .navigationTitle("Reorder tiles")
+            .navigationTitle("Customize")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
