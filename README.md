@@ -73,11 +73,21 @@ D1_DATABASE_ID=<same UUID as wrangler.toml>
 Then:
 
 ```bash
-npm run seed           # full feed in one pass; ~30–45 min
-npm run seed:status    # row counts: remote vs source, per table
+npm run seed              # full feed in one pass; ~2–3 h, writes ~4.2M rows
+npm run seed:if-changed   # HEAD-checks upstream ETag, seeds only if changed (~1s no-op)
+npm run seed:status       # row counts: remote vs source, per table
 ```
 
-The seed downloads `SEQ_GTFS.zip` (~50 MB), parses each CSV, and dispatches INSERT batches to D1 with bounded concurrency. It writes a `backend/.seed-state.json` checkpoint every 50k rows — if the run is interrupted (Ctrl-C, lost connection, laptop sleep), rerunning `npm run seed` picks up exactly where it left off. Re-wipe + restart from scratch with `npm run seed -- --restart`.
+The seed downloads `SEQ_GTFS.zip` (~50 MB), parses each CSV, and dispatches INSERT batches to D1 with bounded concurrency. It writes a `backend/.seed-state.json` checkpoint every 50k rows — if the run is interrupted (Ctrl-C, lost connection, laptop sleep), rerunning `npm run seed` picks up exactly where it left off. Re-wipe + restart from scratch with `npm run seed -- --restart`. On a successful seed, the upstream `ETag`/`Last-Modified` headers are stamped into `feed_meta` so `--if-changed` can detect when the next reseed is actually needed.
+
+**Optional — daily auto-seed via launchd:**
+
+```bash
+cp backend/scripts/com.kedarkokate.translink-qld-seed.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.kedarkokate.translink-qld-seed.plist
+```
+
+Runs `seed:if-changed` at 06:00 daily. Most days it exits in ~1s (no change); when TransLink republishes the feed it kicks off the full 2–3h seed. Logs to `backend/seed-if-changed.log`.
 
 ### 5. Run / deploy
 

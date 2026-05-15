@@ -120,22 +120,46 @@ interface CheckpointState {
 interface CliArgs {
   parallel: number;
   restart: boolean;
+  ifChanged: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
   let parallel = DEFAULT_PARALLEL;
   let restart = false;
+  let ifChanged = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--parallel") parallel = Number(argv[++i]);
     else if (a === "--restart") restart = true;
+    else if (a === "--if-changed") ifChanged = true;
     else if (a === "-h" || a === "--help") {
-      console.log("Usage: seed [--parallel N] [--restart]");
+      console.log("Usage: seed [--parallel N] [--restart] [--if-changed]");
       process.exit(0);
     } else throw new Error(`unknown flag: ${a}`);
   }
   if (!Number.isFinite(parallel) || parallel < 1) parallel = DEFAULT_PARALLEL;
-  return { parallel, restart };
+  return { parallel, restart, ifChanged };
+}
+
+/**
+ * HEAD the GTFS zip. Returns the upstream ETag + Last-Modified, which we
+ * stamp into feed_meta on every successful seed and compare against in
+ * `--if-changed` mode so the daily cron exits in <1s when nothing's new.
+ */
+async function fetchFeedHeaders(): Promise<{ etag: string | null; lastModified: string | null }> {
+  const res = await fetch(GTFS_URL, { method: "HEAD" });
+  if (!res.ok) throw new Error(`HEAD ${GTFS_URL} → ${res.status}`);
+  return {
+    etag: res.headers.get("etag"),
+    lastModified: res.headers.get("last-modified"),
+  };
+}
+
+async function fetchStoredEtag(d1: D1Client): Promise<string | null> {
+  const rows = await d1.query<{ value: string }>(
+    `SELECT value FROM feed_meta WHERE key = 'feed_etag' LIMIT 1`,
+  );
+  return rows[0]?.value ?? null;
 }
 
 function loadCheckpoint(): CheckpointState | null {
@@ -164,6 +188,24 @@ async function main() {
   const token = required("D1_API_TOKEN");
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${dbId}/query`;
   const d1 = makeClient(endpoint, token);
+
+  // --if-changed: short-circuit when the upstream ETag matches what we
+  // stamped at the last successful seed. Costs one HEAD request (~1s) so
+  // the daily launchd cron is essentially free on no-op days.
+  // A pending checkpoint always wins — finish what we started before
+  // deciding whether the upstream has moved on.
+  let upstreamHeaders: { etag: string | null; lastModified: string | null } | null = null;
+  if (args.ifChanged && !existsSync(STATE_FILE)) {
+    upstreamHeaders = await fetchFeedHeaders();
+    const storedEtag = await fetchStoredEtag(d1);
+    if (storedEtag && upstreamHeaders.etag && storedEtag === upstreamHeaders.etag) {
+      console.log(`✓ feed unchanged (etag=${storedEtag}); no seed needed`);
+      return;
+    }
+    console.log(
+      `→ feed changed (upstream=${upstreamHeaders.etag ?? "?"}, stored=${storedEtag ?? "none"}); seeding`,
+    );
+  }
 
   if (args.restart) {
     console.log("↻ --restart: clearing checkpoint, cache, and wiping all GTFS tables");
@@ -227,11 +269,35 @@ async function main() {
   }
 
   await deriveRouteTypes(d1, args.parallel);
+
+  // Stamp last_ingest + feed_etag/feed_last_modified. The headers were
+  // captured pre-seed in --if-changed mode; otherwise fetch them now so a
+  // manual run still records what we just ingested. If the HEAD fails we
+  // continue with nulls — better to land the seed than to refuse the
+  // metadata stamp over a transient network hiccup.
+  if (!upstreamHeaders) {
+    try { upstreamHeaders = await fetchFeedHeaders(); }
+    catch { upstreamHeaders = { etag: null, lastModified: null }; }
+  }
+  const nowIso = new Date().toISOString();
+  const nowUnix = Math.floor(Date.now() / 1000);
   await d1.exec(
     `INSERT INTO feed_meta(key, value, updated_at)
      VALUES('last_ingest', ?1, ?2)
      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
-    [new Date().toISOString(), Math.floor(Date.now() / 1000)],
+    [nowIso, nowUnix],
+  );
+  if (upstreamHeaders.etag) await d1.exec(
+    `INSERT INTO feed_meta(key, value, updated_at)
+     VALUES('feed_etag', ?1, ?2)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+    [upstreamHeaders.etag, nowUnix],
+  );
+  if (upstreamHeaders.lastModified) await d1.exec(
+    `INSERT INTO feed_meta(key, value, updated_at)
+     VALUES('feed_last_modified', ?1, ?2)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+    [upstreamHeaders.lastModified, nowUnix],
   );
 
   clearCheckpoint();
