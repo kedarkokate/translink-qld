@@ -681,20 +681,29 @@ export async function getDepartures(
 
   const now = new Date();
   // GTFS times use the service day's noon as anchor — a service day extends
-  // past midnight as e.g. 25:30:00. We look up today + yesterday's services
-  // and filter by absolute timestamp.
+  // past midnight as e.g. 25:30:00. We look up yesterday + today + tomorrow's
+  // services and filter by absolute timestamp. Tomorrow matters because the
+  // window_min can be up to 24h: when the caller asks for the "next service
+  // up to 24h out" on a day with no service at this stop (e.g. Sunday at a
+  // weekday-only bus stop), tomorrow's services are the only relevant set.
   const today = serviceDate(now, 0);
   const yesterday = serviceDate(now, -1);
+  const tomorrow = serviceDate(now, 1);
   const activeToday = await activeServiceIds(env, today);
   const activeYesterday = await activeServiceIds(env, yesterday);
+  const activeTomorrow = await activeServiceIds(env, tomorrow);
 
   const horizonMs = windowMinutes * 60 * 1000;
   const nowMs = now.getTime();
 
-  const rows = await fetchScheduledRows(env, stopIds, [...activeToday, ...activeYesterday]);
+  const rows = await fetchScheduledRows(
+    env, stopIds,
+    [...activeToday, ...activeYesterday, ...activeTomorrow],
+  );
 
   const tripUpdates = await getTripUpdates(env).catch(() => new Map());
   const yesterdayDate = offsetDate(now, -1);
+  const tomorrowDate = offsetDate(now, 1);
 
   const out: Departure[] = [];
   const consider = (r: ScheduledRow, scheduledMs: number) => {
@@ -729,13 +738,19 @@ export async function getDepartures(
 
   for (const r of rows) {
     // A service_id can be active on consecutive days, so each row may fire on
-    // today (anchored at today's midnight) AND/OR as the tail of yesterday's
-    // service day (only relevant when departure_time >= 24:00:00).
+    // today (anchored at today's midnight), as the tail of yesterday's
+    // service day (only when departure_time >= 24:00:00), and/or as
+    // tomorrow's service when the window peeks past midnight. The `consider`
+    // function filters out anything beyond `now + windowMs`, so loading all
+    // three is safe even for short windows.
     if (activeToday.has(r.service_id)) {
       consider(r, applyGtfsTime(now, r.departure_time));
     }
     if (activeYesterday.has(r.service_id) && r.departure_time >= "24:00:00") {
       consider(r, applyGtfsTime(yesterdayDate, r.departure_time));
+    }
+    if (activeTomorrow.has(r.service_id)) {
+      consider(r, applyGtfsTime(tomorrowDate, r.departure_time));
     }
   }
 
