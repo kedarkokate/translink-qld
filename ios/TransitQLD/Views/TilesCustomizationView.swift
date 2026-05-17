@@ -4,6 +4,7 @@ struct TilesCustomizationView: View {
     @Binding var rawOrder: String
     @Environment(\.dismiss) private var dismiss
     @State private var order: [MapTileKind]
+    @AppStorage(AppearanceMode.storageKey) private var appearanceRaw: String = AppearanceMode.system.rawValue
 
     init(rawOrder: Binding<String>) {
         self._rawOrder = rawOrder
@@ -40,6 +41,20 @@ struct TilesCustomizationView: View {
                 }
 
                 Section {
+                    Picker("Appearance", selection: $appearanceRaw) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Label(mode.label, systemImage: mode.iconName)
+                                .tag(mode.rawValue)
+                        }
+                    }
+                } header: {
+                    Text("Appearance")
+                        .textCase(nil)
+                } footer: {
+                    Text("System follows your iPhone setting. Choose Light or Dark to override it for TransitQLD only.")
+                }
+
+                Section {
                     HStack {
                         Text("Version")
                         Spacer()
@@ -59,7 +74,7 @@ struct TilesCustomizationView: View {
                     Text("About TransitQLD")
                         .textCase(nil)
                 } footer: {
-                    Text("Schedule and realtime transit data published by the Queensland Department of Transport and Main Roads under CC-BY 4.0 via TransLink Open Data.")
+                    Text("Schedule and realtime transit data published by the Queensland Department of Transport and Main Roads under CC-BY 4.0 via TransLink Open Data. Coverage is limited to South-East Queensland — Rockhampton, Toowoomba and other regions are not in this feed.")
                 }
             }
             .environment(\.editMode, .constant(.active))

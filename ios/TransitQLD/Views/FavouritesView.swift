@@ -24,6 +24,7 @@ struct FavouritesView: View {
             }
             .navigationTitle("Favourites")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }

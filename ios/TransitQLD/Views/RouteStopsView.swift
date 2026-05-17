@@ -50,6 +50,7 @@ struct RouteStopsView: View {
             }
             .navigationTitle("Route \(shortName)")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }

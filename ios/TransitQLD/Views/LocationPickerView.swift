@@ -98,6 +98,7 @@ struct LocationPickerView: View {
             .onChange(of: query) { _, new in service.query = new }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }

@@ -45,6 +45,7 @@ struct RouteLookupView: View {
             }
             .navigationTitle("Find by route")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }

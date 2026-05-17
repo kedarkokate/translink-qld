@@ -26,6 +26,11 @@ struct NearbyStopsView: View {
     @State private var cameraPosition: MapCameraPosition = .userLocation(
         followsHeading: false, fallback: .region(brisbaneFallback)
     )
+    /// Set once we've snapped the camera to the user's first real GPS fix.
+    /// `.userLocation(fallback:)` shows the Brisbane fallback while CoreLocation
+    /// is still warming up; without this latch the camera would stay parked
+    /// over Brisbane CBD even after the location fix arrives.
+    @State private var hasAutoCenteredOnUser = false
 
     static let brisbaneFallback = MKCoordinateRegion(
         center: .init(latitude: -27.4698, longitude: 153.0251),
@@ -33,7 +38,14 @@ struct NearbyStopsView: View {
     )
 
     private static let minRadiusM: Double = 150
-    private static let maxRadiusM: Double = 3000
+    // 15 km cap so a zoomed-out view (e.g. panning to the Sunshine Coast or
+    // Gold Coast) still pulls back a useful slice of stops. The endpoint
+    // `limit: 100` clamps the result set so we don't blow up the UI.
+    private static let maxRadiusM: Double = 15_000
+    /// Below this latitudeDelta (~2.2 km north-south at Brisbane latitudes)
+    /// we render labels next to each Marker. Above it, we drop the labels —
+    /// at distant zoom they overlap into illegible stripes.
+    private static let labelVisibleSpan: Double = 0.02
 
     var body: some View {
         NavigationStack {
@@ -83,12 +95,46 @@ struct NearbyStopsView: View {
             visibleRegion = context.region
             scheduleReload()
         }
+        // First real GPS fix → snap the camera onto the user. `.userLocation`
+        // alone shows the Brisbane fallback indefinitely on devices where
+        // CoreLocation is slow to warm up.
+        .onChange(of: locationManager.lastLocation) { _, new in
+            guard !hasAutoCenteredOnUser, let coord = new?.coordinate else { return }
+            hasAutoCenteredOnUser = true
+            withAnimation {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: coord,
+                    latitudinalMeters: 1500, longitudinalMeters: 1500,
+                ))
+            }
+        }
         .overlay(alignment: tilePosition.alignment) {
             tileStack
                 .padding(tilePosition.edgeInsets)
                 .animation(.spring(duration: 0.3), value: focusedRoute)
                 .animation(.spring(duration: 0.3), value: tilePosition)
                 .animation(.spring(duration: 0.3), value: tileOrientation)
+        }
+        .overlay(alignment: .top) {
+            emptyAreaHint
+                .padding(.top, 12)
+                .padding(.horizontal, 16)
+        }
+    }
+
+    /// Banner that surfaces when the visible map area returns zero stops. The
+    /// nearby endpoint succeeded — there just aren't any TransLink stops in
+    /// what the user is looking at. (TransLink's SEQ feed doesn't cover
+    /// Rockhampton, Toowoomba, or other regions outside South-East QLD.)
+    @ViewBuilder
+    private var emptyAreaHint: some View {
+        if !loading && error == nil && stops.isEmpty && visibleRegion != nil {
+            Text("No TransLink stops in this area")
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
+                .transition(.opacity)
         }
     }
 
@@ -158,11 +204,20 @@ struct NearbyStopsView: View {
     }
 
     private func marker(for stop: NearbyStop) -> some MapContent {
-        Marker(stop.stopName,
-               systemImage: stop.modeSymbolName,
-               coordinate: stop.coordinate)
+        // At coarse zoom levels every Marker's label collides with its
+        // neighbours into an unreadable scribble; drop labels and just show
+        // the coloured pins. MapKit's Marker uses empty string ⇒ no label.
+        let label = isZoomedInForLabels ? stop.stopName : ""
+        return Marker(label,
+                      systemImage: stop.modeSymbolName,
+                      coordinate: stop.coordinate)
             .tint(stop.modeTint)
             .tag(stop)
+    }
+
+    private var isZoomedInForLabels: Bool {
+        guard let span = visibleRegion?.span else { return false }
+        return span.latitudeDelta < Self.labelVisibleSpan
     }
 
     /// A stop is hidden by the user's mode filters. Priority matches the pin
@@ -239,7 +294,15 @@ struct NearbyStopsView: View {
         HStack(spacing: 6) {
             Image(systemName: icon)
             if !iconOnly {
-                Text(text).fontWeight(.semibold)
+                Text(text)
+                    .fontWeight(.semibold)
+                    // Without lineLimit + fixedSize a horizontal HStack of
+                    // pills that overflows the screen squishes each pill,
+                    // and the inner Text wraps character-by-character into
+                    // a vertical stripe of letters. Clamp to one line and
+                    // let the pill keep its natural width.
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .font(.subheadline)

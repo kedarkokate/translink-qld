@@ -43,6 +43,10 @@ struct DirectionsView: View {
             .padding(.vertical, 12)
             .navigationTitle("Directions")
             .navigationBarTitleDisplayMode(.inline)
+            // Explicit visible background so the Close button sits on an
+            // opaque bar rather than letting content scroll under it (which
+            // in dark mode made the Close text overlap the From/To rows).
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }
