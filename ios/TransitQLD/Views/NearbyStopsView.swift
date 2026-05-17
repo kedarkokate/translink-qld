@@ -23,13 +23,13 @@ struct NearbyStopsView: View {
     @AppStorage("show_ferries_v1") private var showFerries: Bool = true
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var fetchTask: Task<Void, Never>?
-    @State private var cameraPosition: MapCameraPosition = .userLocation(
-        followsHeading: false, fallback: .region(brisbaneFallback)
-    )
-    /// Set once we've snapped the camera to the user's first real GPS fix.
-    /// `.userLocation(fallback:)` shows the Brisbane fallback while CoreLocation
-    /// is still warming up; without this latch the camera would stay parked
-    /// over Brisbane CBD even after the location fix arrives.
+    // Start on the Brisbane fallback region (not `.userLocation`) so we keep
+    // explicit control of the camera. The Home button still uses
+    // `.userLocation(...)` to engage follow-me mode on demand. Auto-centering
+    // on the user's first GPS fix is handled in the `.onChange(initial:true)`
+    // below so a location that's already available at view-appear time is
+    // honoured (a plain .onChange only fires for *subsequent* changes).
+    @State private var cameraPosition: MapCameraPosition = .region(brisbaneFallback)
     @State private var hasAutoCenteredOnUser = false
 
     static let brisbaneFallback = MKCoordinateRegion(
@@ -95,10 +95,14 @@ struct NearbyStopsView: View {
             visibleRegion = context.region
             scheduleReload()
         }
-        // First real GPS fix → snap the camera onto the user. `.userLocation`
-        // alone shows the Brisbane fallback indefinitely on devices where
-        // CoreLocation is slow to warm up.
-        .onChange(of: locationManager.lastLocation) { _, new in
+        // Snap the camera onto the user's location on first appearance AND
+        // when the first real GPS fix arrives. `initial: true` is the key —
+        // RootView's `.task` starts the LocationManager before NearbyStopsView
+        // is on screen, so by the time .onChange would normally first run the
+        // lastLocation has often *already* been set, which a plain .onChange
+        // would miss. With `initial: true` we run once with whatever value is
+        // current at view-appear time, then again when location actually arrives.
+        .onChange(of: locationManager.lastLocation, initial: true) { _, new in
             guard !hasAutoCenteredOnUser, let coord = new?.coordinate else { return }
             hasAutoCenteredOnUser = true
             withAnimation {
@@ -146,8 +150,16 @@ struct NearbyStopsView: View {
                 tilesContent
             }
         case .horizontal:
-            HStack(alignment: .center, spacing: 8) {
-                tilesContent
+            // Horizontal layout can overflow on small devices once enough
+            // tiles are enabled (we have 5: Home, Directions, Route,
+            // Favourites, Filters). Wrap the row in a horizontal ScrollView
+            // so the user can swipe past the screen edge to reach hidden
+            // pills instead of those pills being clipped off-screen.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .center, spacing: 8) {
+                    tilesContent
+                }
+                .padding(.horizontal, 2)
             }
         }
     }
