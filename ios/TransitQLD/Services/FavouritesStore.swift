@@ -118,6 +118,50 @@ final class FavouritesStore {
         if let data = defaults.data(forKey: Self.servicesKey),
            let decoded = try? decoder.decode([FavouriteService].self, from: data) {
             services = decoded
+            migrateDroppingTimeSpecific()
+        }
+    }
+
+    /// v1.0 dropped the time-specific service favourite (the "07:42 only"
+    /// option). For users upgrading from a build that exposed it, coerce
+    /// any saved time-specific entries to the broader "any time" form and
+    /// dedupe against the route-at-stop entry they may already have. Runs
+    /// once on load; idempotent (no work + no save if already normalised).
+    private func migrateDroppingTimeSpecific() {
+        var changed = false
+        var byKey: [String: FavouriteService] = [:]
+        for svc in services {
+            let normalised: FavouriteService
+            if svc.scheduledSecondsSinceMidnight != nil {
+                changed = true
+                normalised = FavouriteService(
+                    id: svc.id,
+                    stopId: svc.stopId, stopName: svc.stopName, stopCode: svc.stopCode,
+                    stopLat: svc.stopLat, stopLon: svc.stopLon, routeTypes: svc.routeTypes,
+                    routeShortName: svc.routeShortName, routeLongName: svc.routeLongName,
+                    routeType: svc.routeType,
+                    routeColor: svc.routeColor, routeTextColor: svc.routeTextColor,
+                    headsign: svc.headsign, scheduledSecondsSinceMidnight: nil,
+                    addedAt: svc.addedAt,
+                )
+            } else {
+                normalised = svc
+            }
+            // Keep the earliest-added entry per matchKey; later duplicates
+            // are dropped on the assumption the user added the broader one
+            // first and the time-specific one second.
+            if let existing = byKey[normalised.matchKey] {
+                changed = true
+                if normalised.addedAt < existing.addedAt {
+                    byKey[normalised.matchKey] = normalised
+                }
+            } else {
+                byKey[normalised.matchKey] = normalised
+            }
+        }
+        if changed {
+            services = Array(byKey.values).sorted { $0.addedAt < $1.addedAt }
+            save()
         }
     }
 }

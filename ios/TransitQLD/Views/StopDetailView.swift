@@ -200,89 +200,41 @@ struct StopDetailView: View {
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
-            favouriteServiceMenu(group)
+            favouriteServiceButton(group)
         }
         .padding(.vertical, 6)
     }
 
-    /// Trailing-edge star on an upcoming row. Tapping it opens a menu with
-    /// two add/remove options: (a) the broader route-at-stop favourite (any
-    /// time of this route + direction), and (b) the time-specific favourite
-    /// pinned to the next scheduled occurrence's clock time. The star is
-    /// filled whenever either kind is active.
-    @ViewBuilder
-    private func favouriteServiceMenu(_ group: DepartureGroup) -> some View {
+    /// Trailing-edge star on an upcoming row. A simple toggle: tap to add
+    /// (or remove) a "route at this stop" favourite. The time-specific
+    /// variant — favourite the 07:42 specifically — was removed in v1.0
+    /// because picking the exact next-occurrence as the time felt arbitrary;
+    /// the broader bookmark is what users actually wanted.
+    private func favouriteServiceButton(_ group: DepartureGroup) -> some View {
         let routeName = group.routeShortName ?? ""
-        let next = group.times.first
-        let timeSeconds: Int? = next?.brisbaneSecondsSinceMidnight
-
-        let routeFav = favourites.service(
+        let existing = favourites.service(
             matching: stop.stopId, route: routeName,
             headsign: group.headsign, secondsSinceMidnight: nil,
         )
-        let timeFav: FavouriteService? = timeSeconds.flatMap { seconds in
-            favourites.service(
-                matching: stop.stopId, route: routeName,
-                headsign: group.headsign, secondsSinceMidnight: seconds,
-            )
-        }
-        let anyFav = (routeFav != nil) || (timeFav != nil)
-
-        Menu {
-            // (a) Route-at-stop favourite (any time).
-            Button {
-                if let fav = routeFav {
-                    favourites.removeService(id: fav.id)
-                } else {
-                    favourites.addService(buildFavourite(group: group, seconds: nil))
-                }
-            } label: {
-                Label(
-                    routeFav != nil
-                        ? "Remove route favourite"
-                        : "Favourite this route at this stop",
-                    systemImage: routeFav != nil ? "star.slash" : "star",
-                )
-            }
-
-            // (b) Time-specific favourite (e.g. the 07:42).
-            if let seconds = timeSeconds, let nextDep = next {
-                let nextTimeLabel = nextDep.scheduledDeparture.formatted(
-                    date: .omitted, time: .shortened,
-                )
-                Button {
-                    if let fav = timeFav {
-                        favourites.removeService(id: fav.id)
-                    } else {
-                        favourites.addService(
-                            buildFavourite(group: group, seconds: seconds),
-                        )
-                    }
-                } label: {
-                    Label(
-                        timeFav != nil
-                            ? "Remove \(nextTimeLabel) favourite"
-                            : "Favourite the \(nextTimeLabel) departure",
-                        systemImage: timeFav != nil ? "clock.badge.xmark" : "clock",
-                    )
-                }
+        let isFav = existing != nil
+        return Button {
+            if let fav = existing {
+                favourites.removeService(id: fav.id)
+            } else {
+                favourites.addService(buildFavourite(group: group))
             }
         } label: {
-            Image(systemName: anyFav ? "star.fill" : "star")
+            Image(systemName: isFav ? "star.fill" : "star")
                 .font(.system(size: 18))
-                .foregroundStyle(anyFav ? .yellow : .secondary)
+                .foregroundStyle(isFav ? .yellow : .secondary)
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.button)
         .buttonStyle(.plain)
-        .accessibilityLabel("Favourite options")
+        .accessibilityLabel(isFav ? "Remove favourite" : "Favourite this route at this stop")
     }
 
-    /// Build a `FavouriteService` from the row's group context. Pass `nil`
-    /// for `seconds` to favourite the route at the stop (any departure),
-    /// or a value to pin to a specific scheduled time-of-day.
-    private func buildFavourite(group: DepartureGroup, seconds: Int?) -> FavouriteService {
+    private func buildFavourite(group: DepartureGroup) -> FavouriteService {
         FavouriteService(
             stopId: stop.stopId, stopName: stop.stopName,
             stopCode: stop.stopCode,
@@ -294,7 +246,7 @@ struct StopDetailView: View {
             routeColor: group.routeColor,
             routeTextColor: group.routeTextColor,
             headsign: group.headsign,
-            scheduledSecondsSinceMidnight: seconds,
+            scheduledSecondsSinceMidnight: nil,
         )
     }
 
