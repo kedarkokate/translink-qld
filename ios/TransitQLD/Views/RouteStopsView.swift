@@ -20,6 +20,7 @@ struct RouteStopsView: View {
     let shortName: String
     let selectedHeadsign: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(FavouritesStore.self) private var favourites
 
     init(shortName: String, selectedHeadsign: String? = nil) {
         self.shortName = shortName
@@ -88,12 +89,15 @@ struct RouteStopsView: View {
             ForEach(r.directions) { dir in
                 Section(header: directionHeader(dir, response: r)) {
                     ForEach(dir.stops) { stop in
-                        Button {
-                            selectedStop = stop.asNearbyStop()
-                        } label: {
-                            stopRow(stop)
+                        HStack(spacing: 12) {
+                            Button {
+                                selectedStop = stop.asNearbyStop()
+                            } label: {
+                                stopRow(stop)
+                            }
+                            .buttonStyle(.plain)
+                            favouriteToggle(for: stop, in: dir, response: r)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -147,6 +151,54 @@ struct RouteStopsView: View {
                let c = Color(gtfsHex: line.hex) { return c }
         }
         return routeColor(r.routeType)
+    }
+
+    /// Trailing-edge star on each stop row. Bookmarks "this route at this
+    /// stop heading this direction" — the same shape as the favourite the
+    /// star on StopDetailView's departure rows creates, so they dedupe via
+    /// FavouritesStore.service(matching:) naturally.
+    @ViewBuilder
+    private func favouriteToggle(
+        for stop: RouteStop,
+        in dir: RouteDirection,
+        response r: RouteStopsResponse,
+    ) -> some View {
+        let existing = favourites.service(
+            matching: stop.stopId, route: r.routeShortName,
+            headsign: dir.headsign, secondsSinceMidnight: nil,
+        )
+        let isFav = existing != nil
+        Button {
+            if let fav = existing {
+                favourites.removeService(id: fav.id)
+            } else {
+                favourites.addService(FavouriteService(
+                    stopId: stop.stopId, stopName: stop.stopName,
+                    stopCode: stop.stopCode,
+                    stopLat: stop.stopLat, stopLon: stop.stopLon,
+                    // The RouteStops endpoint doesn't surface per-stop
+                    // route_types (the comma-string of modes); leaving it nil
+                    // means the favourites list falls back to the route's
+                    // own route_type when picking an icon, which is correct.
+                    routeTypes: nil,
+                    routeShortName: r.routeShortName,
+                    routeLongName: r.routeLongName,
+                    routeType: r.routeType,
+                    routeColor: r.routeColor,
+                    routeTextColor: r.routeTextColor,
+                    headsign: dir.headsign,
+                    scheduledSecondsSinceMidnight: nil,
+                ))
+            }
+        } label: {
+            Image(systemName: isFav ? "star.fill" : "star")
+                .font(.system(size: 17))
+                .foregroundStyle(isFav ? .yellow : .secondary)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isFav ? "Remove favourite" : "Favourite this stop on route \(r.routeShortName)")
     }
 
     @ViewBuilder

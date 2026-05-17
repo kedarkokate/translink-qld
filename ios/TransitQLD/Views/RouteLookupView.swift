@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RouteLookupView: View {
     @Environment(LocationManager.self) private var locationManager
+    @Environment(FavouritesStore.self) private var favourites
     @Environment(\.dismiss) private var dismiss
 
     /// Called when the user taps "Show on map" with the nearest stop for their
@@ -113,6 +114,14 @@ struct RouteLookupView: View {
                 .buttonStyle(.plain)
                 Text("Nearest stop")
                     .font(.subheadline).foregroundStyle(.secondary)
+                Spacer()
+                routeAtStopFavToggle(
+                    route: r.routeShortName,
+                    routeLongName: nil, routeType: 3,
+                    routeColor: nil, routeTextColor: nil,
+                    headsign: nil,
+                    stop: r.nearestStop,
+                )
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -137,6 +146,48 @@ struct RouteLookupView: View {
         .padding(16)
         .background(Color(.secondarySystemBackground),
                     in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    /// Shared trailing-edge star button used by both the route-search result
+    /// card and the school-route rows. Bookmarks "this route at this stop"
+    /// using the same matchKey shape as the StopDetailView star, so all
+    /// three paths dedupe naturally.
+    @ViewBuilder
+    private func routeAtStopFavToggle(
+        route: String, routeLongName: String?, routeType: Int,
+        routeColor: String?, routeTextColor: String?,
+        headsign: String?, stop: NearbyStop,
+    ) -> some View {
+        let existing = favourites.service(
+            matching: stop.stopId, route: route,
+            headsign: headsign, secondsSinceMidnight: nil,
+        )
+        let isFav = existing != nil
+        Button {
+            if let fav = existing {
+                favourites.removeService(id: fav.id)
+            } else {
+                favourites.addService(FavouriteService(
+                    stopId: stop.stopId, stopName: stop.stopName,
+                    stopCode: stop.stopCode,
+                    stopLat: stop.stopLat, stopLon: stop.stopLon,
+                    routeTypes: stop.routeTypes,
+                    routeShortName: route, routeLongName: routeLongName,
+                    routeType: routeType,
+                    routeColor: routeColor, routeTextColor: routeTextColor,
+                    headsign: headsign,
+                    scheduledSecondsSinceMidnight: nil,
+                ))
+            }
+        } label: {
+            Image(systemName: isFav ? "star.fill" : "star")
+                .font(.system(size: 17))
+                .foregroundStyle(isFav ? .yellow : .secondary)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isFav ? "Remove favourite" : "Favourite route \(route) at this stop")
     }
 
     // MARK: School routes
@@ -199,31 +250,42 @@ struct RouteLookupView: View {
 
     @ViewBuilder
     private func schoolMatchRow(_ match: SchoolRouteMatch) -> some View {
-        Button {
-            routeStopsRequest = RouteStopsRequest(shortName: match.routeShortName)
-        } label: {
-            HStack(spacing: 12) {
-                Text(match.routeShortName)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .foregroundStyle(.white)
-                    .background(.blue, in: RoundedRectangle(cornerRadius: 8))
-                    .frame(minWidth: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(match.schoolHeadsign)
-                        .font(.subheadline).lineLimit(1)
-                    Text("\(formattedDistance(match.nearestStop.distanceM)) · \(match.nearestStop.stopName)")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        HStack(spacing: 8) {
+            Button {
+                routeStopsRequest = RouteStopsRequest(shortName: match.routeShortName)
+            } label: {
+                HStack(spacing: 12) {
+                    Text(match.routeShortName)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .foregroundStyle(.white)
+                        .background(.blue, in: RoundedRectangle(cornerRadius: 8))
+                        .frame(minWidth: 48)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(match.schoolHeadsign)
+                            .font(.subheadline).lineLimit(1)
+                        Text("\(formattedDistance(match.nearestStop.distanceM)) · \(match.nearestStop.stopName)")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption).foregroundStyle(.secondary)
+                .padding(.vertical, 8).padding(.horizontal, 12)
+                .background(Color(.secondarySystemBackground),
+                            in: RoundedRectangle(cornerRadius: 10))
             }
-            .padding(.vertical, 8).padding(.horizontal, 12)
-            .background(Color(.secondarySystemBackground),
-                        in: RoundedRectangle(cornerRadius: 10))
+            .buttonStyle(.plain)
+
+            routeAtStopFavToggle(
+                route: match.routeShortName,
+                routeLongName: match.routeLongName,
+                routeType: match.routeType,
+                routeColor: nil, routeTextColor: nil,
+                headsign: match.schoolHeadsign,
+                stop: match.nearestStop,
+            )
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: Helpers
