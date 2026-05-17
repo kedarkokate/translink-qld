@@ -42,10 +42,6 @@ struct NearbyStopsView: View {
     // Gold Coast) still pulls back a useful slice of stops. The endpoint
     // `limit: 100` clamps the result set so we don't blow up the UI.
     private static let maxRadiusM: Double = 15_000
-    /// Below this latitudeDelta (~2.2 km north-south at Brisbane latitudes)
-    /// we render labels next to each Marker. Above it, we drop the labels —
-    /// at distant zoom they overlap into illegible stripes.
-    private static let labelVisibleSpan: Double = 0.02
 
     var body: some View {
         NavigationStack {
@@ -216,20 +212,15 @@ struct NearbyStopsView: View {
     }
 
     private func marker(for stop: NearbyStop) -> some MapContent {
-        // At coarse zoom levels every Marker's label collides with its
-        // neighbours into an unreadable scribble; drop labels and just show
-        // the coloured pins. MapKit's Marker uses empty string ⇒ no label.
-        let label = isZoomedInForLabels ? stop.stopName : ""
-        return Marker(label,
-                      systemImage: stop.modeSymbolName,
-                      coordinate: stop.coordinate)
+        // No on-map labels: MapKit's declutterer hides most names at typical
+        // zoom levels anyway and the few it does show were inaccurate /
+        // misleading. The full name is one tap away via the stop sheet, so
+        // keeping the map to coloured pins reads cleaner.
+        Marker("",
+               systemImage: stop.modeSymbolName,
+               coordinate: stop.coordinate)
             .tint(stop.modeTint)
             .tag(stop)
-    }
-
-    private var isZoomedInForLabels: Bool {
-        guard let span = visibleRegion?.span else { return false }
-        return span.latitudeDelta < Self.labelVisibleSpan
     }
 
     /// A stop is hidden by the user's mode filters. Priority matches the pin
