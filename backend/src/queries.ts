@@ -451,18 +451,59 @@ export async function findNearestStopForRoute(
 }
 
 // -------------------------------------------------------------------------
-// Direct-route journey planner.
-// Find single-trip transit journeys whose board stop is within walking
-// distance of `from` and alight stop within walking distance of `to`. No
-// transfers (v1). Sorted by total journey time (walking + waiting + transit).
+// Journey planner.
+//
+// Two algorithms:
+//   1. Direct: a single trip whose board stop is within walking distance
+//      of `from` and alight stop within walking distance of `to`.
+//   2. One-transfer (opt-in via `withTransfers`): board near `from`, ride
+//      to one of TRANSIT_HUBS, get off, board another trip at the same hub
+//      (same `parent_station`), ride to a stop near `to`. Hubs are the top
+//      ~25 interchange stations in SEQ by distinct-route count.
+//
+// Results are merged and sorted by total minutes (walk + wait + transit).
 // -------------------------------------------------------------------------
 
 const WALK_SPEED_M_PER_MIN = 80;  // ~5 km/h, typical urban walking pace
+const MIN_TRANSFER_MINUTES = 3;   // cross-platform wait at a hub
+const MAX_TRANSFER_MINUTES = 30;  // beyond this, two trips with a transfer
+
+/// Top-25 SEQ transit hubs (parent_stations) by distinct routes served.
+/// Identified from D1 with COUNT(DISTINCT route_id) GROUP BY parent_station.
+/// Each entry below is the `parent_station` id — at query time we resolve
+/// child platform stop_ids via the stops table.
+const TRANSIT_HUBS: readonly string[] = [
+  "place_bowsta",  // Bowen Hills station
+  "place_romsta",  // Roma Street station
+  "place_forsta",  // Fortitude Valley station
+  "place_censta",  // Central station
+  "place_egjsta",  // Eagle Junction station
+  "place_norsta",  // Northgate station
+  "place_sousta",  // South Brisbane station
+  "place_sbasta",  // South Bank station
+  "place_parsta",  // Park Road / Boggo Road station
+  "place_petsta",  // Petrie station
+  "place_milsta",  // Milton station
+  "place_darsta",  // Darra station
+  "place_oxlsta",  // Oxley station
+  "place_corsta",  // Corinda station
+  "place_twgsta",  // Toowong station
+  "place_indsta",  // Indooroopilly station
+  "place_shesta",  // Sherwood station
+  "place_albsta",  // Albion station
+  "place_wolsta",  // Wooloowin station
+  "place_beesta",  // Beenleigh station
+  "place_logsta",  // Loganlea station
+  "place_cabstn",  // Caboolture station
+  "place_ipssta",  // Ipswich station
+  "place_burbs",   // Buranda busway station
+  "place_spcsta",  // Springfield Central station
+];
 
 export interface JourneyOption {
   total_minutes: number;
   walk_to_minutes: number;
-  transit_minutes: number;
+  transit_minutes: number;       // sum of both legs' on-vehicle minutes
   walk_from_minutes: number;
   route: {
     route_id: string;
@@ -475,9 +516,29 @@ export interface JourneyOption {
   trip_id: string;
   headsign: string | null;
   board: JourneyStopRef;
-  alight: JourneyStopRef;
+  alight: JourneyStopRef;       // for transfer journeys, the hub stop
   is_realtime: boolean;
   delay_seconds: number | null;
+  /// Only set on one-transfer journeys. When present, the user gets off at
+  /// `alight` (the hub) and boards `transfer.route` at the same hub to ride
+  /// to `transfer.alight` (the final destination near `to`).
+  transfer?: JourneyTransferLeg;
+}
+
+interface JourneyTransferLeg {
+  wait_minutes: number;
+  route: {
+    route_id: string;
+    route_short_name: string | null;
+    route_long_name: string | null;
+    route_type: number;
+    route_color: string | null;
+    route_text_color: string | null;
+  };
+  trip_id: string;
+  headsign: string | null;
+  board: JourneyStopRef;
+  alight: JourneyStopRef;
 }
 
 interface JourneyStopRef {
@@ -507,6 +568,7 @@ export async function planJourney(
   windowMinutes: number,
   walkRadiusM: number,
   maxResults: number,
+  withTransfers: boolean = false,
 ): Promise<JourneyOption[]> {
   const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 15);
   const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 15);
@@ -644,6 +706,296 @@ export async function planJourney(
     if (!existing || c.total_minutes < existing.total_minutes) seen.set(key, c);
   }
 
+  let allOptions = Array.from(seen.values());
+
+  // If the client opted in, also try hub-anchored one-transfer journeys and
+  // merge them with the direct options. Combined results sort by total
+  // minutes — a faster direct ride still wins over a slower transfer.
+  if (withTransfers) {
+    const transferOptions = await planTransferJourneys(
+      env, fromLat, fromLon, toLat, toLon,
+      windowMinutes, walkRadiusM, maxResults,
+    );
+    allOptions = allOptions.concat(transferOptions);
+  }
+
+  return allOptions
+    .sort((a, b) => a.total_minutes - b.total_minutes)
+    .slice(0, maxResults);
+}
+
+interface HubPlatform {
+  stop_id: string;
+  parent_station: string;
+  stop_name: string;
+  stop_lat: number;
+  stop_lon: number;
+}
+
+interface TransferLegRow {
+  trip_id: string;
+  board_stop: string;
+  board_time: string;
+  alight_stop: string;
+  alight_time: string;
+  route_id: string;
+  trip_headsign: string | null;
+  route_short_name: string | null;
+  route_long_name: string | null;
+  route_type: number;
+  route_color: string | null;
+  route_text_color: string | null;
+}
+
+/**
+ * Hub-anchored one-transfer journey planner.
+ *
+ * Two SQL queries: leg1 (any fromStop → any hub platform) and leg2 (any hub
+ * platform → any toStop). Join them in JS where the alight-hub of leg1
+ * shares a `parent_station` with the board-hub of leg2, and the leg2
+ * departure is at least MIN_TRANSFER_MINUTES after the leg1 arrival.
+ *
+ * Trusted hub stop_ids are inlined as SQL literals so we don't blow past
+ * D1's 100-bound-parameter cap (~120-180 hub platform IDs across the 25
+ * hubs).
+ */
+async function planTransferJourneys(
+  env: Env,
+  fromLat: number, fromLon: number,
+  toLat: number, toLon: number,
+  windowMinutes: number,
+  walkRadiusM: number,
+  maxResults: number,
+): Promise<JourneyOption[]> {
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 10);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 10);
+  if (fromStops.length === 0 || toStops.length === 0) return [];
+
+  // Resolve hub parent_stations → their child platform stop_ids.
+  const hubPh = TRANSIT_HUBS.map((_, i) => `?${i + 1}`).join(",");
+  const hubRes = await env.DB.prepare(
+    `SELECT stop_id, parent_station, stop_name, stop_lat, stop_lon
+     FROM stops WHERE parent_station IN (${hubPh})`
+  ).bind(...TRANSIT_HUBS).all<HubPlatform>();
+  const hubPlatforms = hubRes.results ?? [];
+  if (hubPlatforms.length === 0) return [];
+  const hubByStop = new Map<string, HubPlatform>(
+    hubPlatforms.map(p => [p.stop_id, p])
+  );
+  // Inline as SQL literals: stop_ids are from D1, trusted, no injection risk.
+  const hubStopLiteral = hubPlatforms
+    .map(p => `'${p.stop_id.replace(/'/g, "''")}'`)
+    .join(",");
+
+  const now = new Date();
+  const dateStr = brisbaneDateISO(now).replaceAll("-", "");
+  const dowCol = dayOfWeekColumn(dateStr);
+  const nowLocal = brisbaneClock(now);
+  const upper = clockPlusMinutes(nowLocal, windowMinutes);
+  const upperLeg2 = clockPlusMinutes(nowLocal, windowMinutes + 30);
+
+  // ---- Leg 1: any fromStop → any hub platform ----
+  const boardPh1 = fromStops.map((_, i) => `?${i + 1}`).join(",");
+  const d1Idx = fromStops.length + 1;
+  const l1Idx = d1Idx + 1;
+  const u1Idx = d1Idx + 2;
+  const leg1Sql = `
+    SELECT sa.trip_id,
+      sa.stop_id AS board_stop, sa.departure_time AS board_time,
+      sb.stop_id AS alight_stop, sb.arrival_time AS alight_time,
+      t.route_id, t.trip_headsign,
+      r.route_short_name, r.route_long_name, r.route_type,
+      r.route_color, r.route_text_color
+    FROM stop_times sa
+    JOIN stop_times sb ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
+    JOIN trips t ON t.trip_id = sa.trip_id
+    JOIN routes r ON r.route_id = t.route_id
+    WHERE sa.stop_id IN (${boardPh1})
+      AND sb.stop_id IN (${hubStopLiteral})
+      AND t.service_id IN (
+        SELECT service_id FROM calendar
+        WHERE start_date <= ?${d1Idx} AND end_date >= ?${d1Idx} AND ${dowCol} = 1
+      )
+      AND sa.departure_time BETWEEN ?${l1Idx} AND ?${u1Idx}
+      AND sa.pickup_type != 1 AND sb.drop_off_type != 1
+    ORDER BY sa.departure_time
+    LIMIT 600
+  `;
+  const { results: leg1Rows = [] } = await env.DB.prepare(leg1Sql)
+    .bind(...fromStops.map(s => s.stop_id), dateStr, nowLocal, upper)
+    .all<TransferLegRow>();
+
+  // ---- Leg 2: any hub platform → any toStop ----
+  const alightPh2 = toStops.map((_, i) => `?${i + 1}`).join(",");
+  const d2Idx = toStops.length + 1;
+  const l2Idx = d2Idx + 1;
+  const u2Idx = d2Idx + 2;
+  const leg2Sql = `
+    SELECT sa.trip_id,
+      sa.stop_id AS board_stop, sa.departure_time AS board_time,
+      sb.stop_id AS alight_stop, sb.arrival_time AS alight_time,
+      t.route_id, t.trip_headsign,
+      r.route_short_name, r.route_long_name, r.route_type,
+      r.route_color, r.route_text_color
+    FROM stop_times sa
+    JOIN stop_times sb ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
+    JOIN trips t ON t.trip_id = sa.trip_id
+    JOIN routes r ON r.route_id = t.route_id
+    WHERE sa.stop_id IN (${hubStopLiteral})
+      AND sb.stop_id IN (${alightPh2})
+      AND t.service_id IN (
+        SELECT service_id FROM calendar
+        WHERE start_date <= ?${d2Idx} AND end_date >= ?${d2Idx} AND ${dowCol} = 1
+      )
+      AND sa.departure_time BETWEEN ?${l2Idx} AND ?${u2Idx}
+      AND sa.pickup_type != 1 AND sb.drop_off_type != 1
+    ORDER BY sa.departure_time
+    LIMIT 600
+  `;
+  const { results: leg2Rows = [] } = await env.DB.prepare(leg2Sql)
+    .bind(...toStops.map(s => s.stop_id), dateStr, nowLocal, upperLeg2)
+    .all<TransferLegRow>();
+
+  if (!leg1Rows.length || !leg2Rows.length) return [];
+
+  // Index leg2 by hub parent_station for fast pairing
+  const leg2ByHub = new Map<string, TransferLegRow[]>();
+  for (const r of leg2Rows) {
+    const hub = hubByStop.get(r.board_stop);
+    if (!hub) continue;
+    const list = leg2ByHub.get(hub.parent_station) ?? [];
+    list.push(r);
+    leg2ByHub.set(hub.parent_station, list);
+  }
+
+  const tripUpdates = await getTripUpdates(env).catch(() => new Map());
+  const nowMs = now.getTime();
+  const fromMap = new Map(fromStops.map(s => [s.stop_id, s]));
+  const toMap   = new Map(toStops.map(s => [s.stop_id, s]));
+
+  const candidates: JourneyOption[] = [];
+
+  for (const a of leg1Rows) {
+    const aHub = hubByStop.get(a.alight_stop);
+    if (!aHub) continue;
+    const leg1Board = fromMap.get(a.board_stop);
+    if (!leg1Board) continue;
+
+    const leg1BoardMs = applyGtfsTime(now, a.board_time);
+    const leg1AlightMs = applyGtfsTime(now, a.alight_time);
+    if (leg1BoardMs < nowMs - 60_000) continue;
+    if (leg1AlightMs <= leg1BoardMs) continue;
+
+    const walkToMin = leg1Board.distance_m / WALK_SPEED_M_PER_MIN;
+    const minutesUntilBoard = (leg1BoardMs - nowMs) / 60_000;
+    if (minutesUntilBoard < walkToMin - 1) continue;
+
+    // Realtime: apply delay to leg1 only. Realtime trip updates don't
+    // typically include enough forward-look to predict leg2 reliably.
+    const tu = tripUpdates.get(a.trip_id);
+    if (tu?.schedule_relationship === 3) continue;
+    const stu = tu?.stop_time_updates.find((s: { stop_id: string }) => s.stop_id === a.board_stop);
+    const delaySec = stu?.departure_delay ?? stu?.arrival_delay ?? null;
+    const predLeg1BoardMs = delaySec != null ? leg1BoardMs + delaySec * 1000 : leg1BoardMs;
+    const predLeg1AlightMs = delaySec != null ? leg1AlightMs + delaySec * 1000 : leg1AlightMs;
+
+    const leg2List = leg2ByHub.get(aHub.parent_station) ?? [];
+    for (const b of leg2List) {
+      if (a.trip_id === b.trip_id) continue;  // same trip — not a transfer
+
+      const bHub = hubByStop.get(b.board_stop)!;
+      const leg2BoardMs = applyGtfsTime(now, b.board_time);
+      const leg2AlightMs = applyGtfsTime(now, b.alight_time);
+      if (leg2AlightMs <= leg2BoardMs) continue;
+
+      const transferMin = (leg2BoardMs - leg1AlightMs) / 60_000;
+      if (transferMin < MIN_TRANSFER_MINUTES) continue;
+      if (transferMin > MAX_TRANSFER_MINUTES) continue;
+
+      const leg2Alight = toMap.get(b.alight_stop);
+      if (!leg2Alight) continue;
+      const walkFromMin = leg2Alight.distance_m / WALK_SPEED_M_PER_MIN;
+
+      const transitMin = (leg1AlightMs - leg1BoardMs) / 60_000
+        + (leg2AlightMs - leg2BoardMs) / 60_000;
+      const totalMin =
+        (predLeg1BoardMs - nowMs) / 60_000
+        + (leg1AlightMs - leg1BoardMs) / 60_000
+        + transferMin
+        + (leg2AlightMs - leg2BoardMs) / 60_000
+        + walkFromMin;
+      if (totalMin > windowMinutes * 1.5) continue;
+
+      candidates.push({
+        total_minutes: Math.round(totalMin),
+        walk_to_minutes: Math.round(walkToMin),
+        transit_minutes: Math.round(transitMin),
+        walk_from_minutes: Math.round(walkFromMin),
+        route: {
+          route_id: a.route_id,
+          route_short_name: a.route_short_name,
+          route_long_name: a.route_long_name,
+          route_type: a.route_type,
+          route_color: a.route_color,
+          route_text_color: a.route_text_color,
+        },
+        trip_id: a.trip_id,
+        headsign: a.trip_headsign,
+        board: {
+          stop_id: leg1Board.stop_id, stop_name: leg1Board.stop_name,
+          stop_lat: leg1Board.stop_lat, stop_lon: leg1Board.stop_lon,
+          walk_distance_m: Math.round(leg1Board.distance_m),
+          scheduled_time: new Date(leg1BoardMs).toISOString(),
+          predicted_time: delaySec != null ? new Date(predLeg1BoardMs).toISOString() : null,
+        },
+        alight: {
+          stop_id: a.alight_stop, stop_name: aHub.stop_name,
+          stop_lat: aHub.stop_lat, stop_lon: aHub.stop_lon,
+          walk_distance_m: 0,
+          scheduled_time: new Date(leg1AlightMs).toISOString(),
+          predicted_time: delaySec != null ? new Date(predLeg1AlightMs).toISOString() : null,
+        },
+        is_realtime: tu != null,
+        delay_seconds: delaySec,
+        transfer: {
+          wait_minutes: Math.round(transferMin),
+          route: {
+            route_id: b.route_id,
+            route_short_name: b.route_short_name,
+            route_long_name: b.route_long_name,
+            route_type: b.route_type,
+            route_color: b.route_color,
+            route_text_color: b.route_text_color,
+          },
+          trip_id: b.trip_id,
+          headsign: b.trip_headsign,
+          board: {
+            stop_id: b.board_stop, stop_name: bHub.stop_name,
+            stop_lat: bHub.stop_lat, stop_lon: bHub.stop_lon,
+            walk_distance_m: 0,
+            scheduled_time: new Date(leg2BoardMs).toISOString(),
+            predicted_time: null,
+          },
+          alight: {
+            stop_id: leg2Alight.stop_id, stop_name: leg2Alight.stop_name,
+            stop_lat: leg2Alight.stop_lat, stop_lon: leg2Alight.stop_lon,
+            walk_distance_m: Math.round(leg2Alight.distance_m),
+            scheduled_time: new Date(leg2AlightMs).toISOString(),
+            predicted_time: null,
+          },
+        },
+      });
+    }
+  }
+
+  // Dedupe by (leg1 route, leg2 route, hub) — keep the earliest journey.
+  const seen = new Map<string, JourneyOption>();
+  for (const c of candidates) {
+    const hubKey = hubByStop.get(c.alight.stop_id)?.parent_station ?? c.alight.stop_id;
+    const key = `${c.route.route_id}|${c.transfer!.route.route_id}|${hubKey}`;
+    const existing = seen.get(key);
+    if (!existing || c.total_minutes < existing.total_minutes) seen.set(key, c);
+  }
   return Array.from(seen.values())
     .sort((a, b) => a.total_minutes - b.total_minutes)
     .slice(0, maxResults);

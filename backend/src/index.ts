@@ -123,8 +123,12 @@ app.get("/v1/journey", async c => {
   const windowMin = Math.min(Number(c.req.query("window_min") ?? 90), 180);
   const walkRadiusM = Math.min(Number(c.req.query("walk_m") ?? 500), 800);
   const limit = Math.min(Number(c.req.query("limit") ?? 12), 30);
+  // Opt-in flag — 1.0.0 clients won't send this, so they keep getting
+  // direct-only results. 1.0.1+ clients pass ?transfers=1 to enable
+  // hub-anchored one-transfer journeys.
+  const withTransfers = c.req.query("transfers") === "1";
   const options = await planJourney(
-    c.env, fromLat, fromLon, toLat, toLon, windowMin, walkRadiusM, limit,
+    c.env, fromLat, fromLon, toLat, toLon, windowMin, walkRadiusM, limit, withTransfers,
   );
   return c.json({ options });
 });
