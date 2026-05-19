@@ -12,7 +12,7 @@ struct NearbyStopsView: View {
     @State private var routeLookupShown = false
     @State private var directionsShown = false
     @State private var favouritesShown = false
-    @State private var customizeShown = false
+    @State private var settingsShown = false
     @State private var focusedStop: NearbyStop?
     @State private var focusedRoute: String?
     @AppStorage(TilePosition.storageKey) private var tilePositionRaw: String = TilePosition.defaultValue.rawValue
@@ -48,7 +48,7 @@ struct NearbyStopsView: View {
             mapView
                 .navigationTitle("Nearby")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar { refreshToolbar }
+                .toolbar { navigationToolbar }
                 .onChange(of: selectedStop) { _, new in
                     if new != nil { sheetShown = true }
                 }
@@ -69,8 +69,8 @@ struct NearbyStopsView: View {
                     FavouritesView()
                         .presentationDetents([.medium, .large])
                 }
-                .sheet(isPresented: $customizeShown) {
-                    TilesCustomizationView(rawOrder: $tileOrderRaw)
+                .sheet(isPresented: $settingsShown) {
+                    SettingsView(rawOrder: $tileOrderRaw)
                         .presentationDetents([.medium, .large])
                 }
         }
@@ -330,11 +330,6 @@ struct NearbyStopsView: View {
                     .tag(o.rawValue)
             }
         }
-        Button {
-            customizeShown = true
-        } label: {
-            Label("Reorder tiles…", systemImage: "list.bullet.rectangle")
-        }
     }
 
     private var anyFilterActive: Bool {
@@ -445,7 +440,15 @@ struct NearbyStopsView: View {
     }
 
     @ToolbarContentBuilder
-    private var refreshToolbar: some ToolbarContent {
+    private var navigationToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                settingsShown = true
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .accessibilityLabel("Settings")
+        }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 scheduleReload(delayMs: 0)
@@ -457,6 +460,7 @@ struct NearbyStopsView: View {
                 }
             }
             .disabled(loading)
+            .accessibilityLabel("Refresh nearby stops")
         }
     }
 

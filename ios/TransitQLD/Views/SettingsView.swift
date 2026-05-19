@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct TilesCustomizationView: View {
+struct SettingsView: View {
     @Binding var rawOrder: String
     @Environment(\.dismiss) private var dismiss
     @State private var order: [MapTileKind]
@@ -34,10 +34,8 @@ struct TilesCustomizationView: View {
                         order.move(fromOffsets: from, toOffset: to)
                     }
                 } header: {
-                    Text("Drag the rows to reorder the tiles on the map")
+                    Text("Drag to reorder the tiles on the map")
                         .textCase(nil)
-                } footer: {
-                    Text("Long-press a tile on the map to reopen this customizer.")
                 }
 
                 Section {
@@ -78,7 +76,7 @@ struct TilesCustomizationView: View {
                 }
             }
             .environment(\.editMode, .constant(.active))
-            .navigationTitle("Customize")
+            .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -92,7 +90,7 @@ struct TilesCustomizationView: View {
                     .fontWeight(.semibold)
                 }
                 ToolbarItem(placement: .bottomBar) {
-                    Button("Reset to defaults") {
+                    Button("Reset tile order") {
                         order = MapTileOrder.defaultOrder
                     }
                 }
