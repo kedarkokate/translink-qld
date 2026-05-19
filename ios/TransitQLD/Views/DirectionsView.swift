@@ -240,16 +240,33 @@ struct DirectionsView: View {
                     primary: "Walk \(option.walkToMinutes) min to \(option.board.stopName)",
                     secondary: "\(option.board.walkDistanceM) m",
                 )
+                // Leg 1's ride. For direct journeys this is the full ride
+                // from board to the final destination; for transfer
+                // journeys it's the first leg ending at the hub.
                 journeyStep(
                     icon: routeIcon(option.route.routeType),
                     iconColor: routeTint(option.route, headsign: option.headsign),
                     primary: "Catch \(routeLabel(option.route, headsign: option.headsign)) at \(formatTime(option.board.effectiveTime))",
-                    secondary: "Ride \(option.transitMinutes) min → arrive \(formatTime(option.alight.effectiveTime))",
+                    secondary: leg1Secondary(option),
                 )
+                if let transfer = option.transfer {
+                    journeyStep(
+                        icon: "arrow.triangle.swap",
+                        iconColor: .orange,
+                        primary: "Transfer at \(transfer.board.stopName)",
+                        secondary: transferSecondary(transfer),
+                    )
+                    journeyStep(
+                        icon: routeIcon(transfer.route.routeType),
+                        iconColor: routeTint(transfer.route, headsign: transfer.headsign),
+                        primary: "Catch \(routeLabel(transfer.route, headsign: transfer.headsign)) at \(formatTime(transfer.board.effectiveTime))",
+                        secondary: "Ride to \(transfer.alight.stopName) → arrive \(formatTime(transfer.alight.effectiveTime))",
+                    )
+                }
                 journeyStep(
                     icon: "figure.walk", iconColor: .secondary,
-                    primary: "Walk \(option.walkFromMinutes) min from \(option.alight.stopName)",
-                    secondary: "\(option.alight.walkDistanceM) m",
+                    primary: "Walk \(option.walkFromMinutes) min from \(finalAlight(option).stopName)",
+                    secondary: "\(finalAlight(option).walkDistanceM) m",
                 )
             }
 
@@ -261,6 +278,27 @@ struct DirectionsView: View {
                     .foregroundStyle(delay > 0 ? .orange : .green)
             }
         }
+    }
+
+    /// Secondary text for the first ride leg. For direct journeys this is
+    /// the full transit duration + final arrival time. For transfer
+    /// journeys we only describe leg 1 (hub arrival); transitMinutes spans
+    /// both legs so we recompute leg 1's duration from its timestamps.
+    private func leg1Secondary(_ option: JourneyOption) -> String {
+        guard option.hasTransfer else {
+            return "Ride \(option.transitMinutes) min → arrive \(formatTime(option.alight.effectiveTime))"
+        }
+        let mins = Int(option.alight.effectiveTime.timeIntervalSince(option.board.effectiveTime) / 60)
+        return "Ride \(mins) min → arrive \(option.alight.stopName) at \(formatTime(option.alight.effectiveTime))"
+    }
+
+    private func transferSecondary(_ transfer: JourneyTransferLeg) -> String {
+        if transfer.waitMinutes <= 1 { return "Cross-platform transfer" }
+        return "Wait \(transfer.waitMinutes) min, then board \(transfer.route.displayName)"
+    }
+
+    private func finalAlight(_ option: JourneyOption) -> JourneyStopRef {
+        option.transfer?.alight ?? option.alight
     }
 
     private func journeyStep(

@@ -188,8 +188,19 @@ struct JourneyOption: Codable, Identifiable {
     let alight: JourneyStopRef
     let isRealtime: Bool
     let delaySeconds: Int?
+    /// When set, this is a one-transfer journey: ride `route` from `board`
+    /// to `alight` (the hub), then transfer at the same hub onto
+    /// `transfer.route` to `transfer.alight` (the final destination).
+    let transfer: JourneyTransferLeg?
 
-    var id: String { "\(tripId)|\(board.stopId)|\(alight.stopId)" }
+    var id: String {
+        if let t = transfer {
+            return "\(tripId)|\(board.stopId)|\(alight.stopId)→\(t.tripId)|\(t.alight.stopId)"
+        }
+        return "\(tripId)|\(board.stopId)|\(alight.stopId)"
+    }
+
+    var hasTransfer: Bool { transfer != nil }
 
     enum CodingKeys: String, CodingKey {
         case totalMinutes = "total_minutes"
@@ -202,6 +213,24 @@ struct JourneyOption: Codable, Identifiable {
         case board, alight
         case isRealtime = "is_realtime"
         case delaySeconds = "delay_seconds"
+        case transfer
+    }
+}
+
+struct JourneyTransferLeg: Codable, Hashable {
+    let waitMinutes: Int
+    let route: JourneyRoute
+    let tripId: String
+    let headsign: String?
+    let board: JourneyStopRef
+    let alight: JourneyStopRef
+
+    enum CodingKeys: String, CodingKey {
+        case waitMinutes = "wait_minutes"
+        case route
+        case tripId = "trip_id"
+        case headsign
+        case board, alight
     }
 }
 

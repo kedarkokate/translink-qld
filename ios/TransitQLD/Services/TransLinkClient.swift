@@ -91,6 +91,10 @@ final class TransLinkClient {
             "window_min": "\(windowMin)",
             "walk_m": "\(walkM)",
             "limit": "\(limit)",
+            // 1.0.1+ opts into hub-anchored one-transfer journeys. The
+            // backend defaults to direct-only when this flag is absent,
+            // so 1.0.0 clients keep getting the original behaviour.
+            "transfers": "1",
         ])
         return try await get(url, as: Resp.self).options
     }
