@@ -185,12 +185,17 @@ struct DirectionsView: View {
                 Button {
                     openInAppleMaps()
                 } label: {
-                    Label("Open in Apple Maps for full directions",
-                          systemImage: "map")
+                    Text("Open in Apple Maps")
+                        .font(.headline)
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .lineLimit(1)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .listRowBackground(Color.clear)
+            } footer: {
+                Text("For transfers or longer trips, Apple Maps gives full step-by-step directions.")
             }
         }
         .listStyle(.insetGrouped)

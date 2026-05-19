@@ -63,7 +63,7 @@ struct NearbyStopsView: View {
                 }
                 .sheet(isPresented: $directionsShown) {
                     DirectionsView()
-                        .presentationDetents([.medium, .large])
+                        .presentationDetents([.large])
                 }
                 .sheet(isPresented: $favouritesShown) {
                     FavouritesView()
