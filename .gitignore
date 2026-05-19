@@ -3,3 +3,6 @@
 .vscode/
 *.log
 tmp/
+
+# App Store screenshots are managed in App Store Connect, not git.
+screenshots/
