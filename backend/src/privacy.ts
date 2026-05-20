@@ -25,7 +25,7 @@ export const PRIVACY_HTML = `<!DOCTYPE html>
 <h1>TransitQLD Privacy Policy</h1>
 <p><em>Effective 15 May 2026.</em></p>
 <p>This policy explains how the TransitQLD iOS app and its supporting backend
-(a Cloudflare Worker at <code>translink-qld.kedarkokate.workers.dev</code>) handle data.</p>
+(a Cloudflare Worker at <code>translink-qld.transitqld.workers.dev</code>) handle data.</p>
 
 <h2>What we collect</h2>
 <ul>

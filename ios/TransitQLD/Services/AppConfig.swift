@@ -7,7 +7,7 @@ enum AppConfig {
         #if DEBUG
         return URL(string: "http://localhost:8787")!
         #else
-        return URL(string: "https://translink-qld.kedarkokate.workers.dev")!
+        return URL(string: "https://translink-qld.transitqld.workers.dev")!
         #endif
     }()
 }

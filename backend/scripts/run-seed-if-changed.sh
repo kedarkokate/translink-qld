@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Wrapper invoked by ~/Library/LaunchAgents/com.kedarkokate.translink-qld-seed.plist
+# Wrapper invoked by ~/Library/LaunchAgents/au.com.transitqld.daily-seed.plist
 # once a day. Checks the upstream GTFS ETag and only triggers a full seed
 # when TransLink has republished the feed (most days: instant no-op).
 #

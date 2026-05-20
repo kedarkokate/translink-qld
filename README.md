@@ -91,8 +91,8 @@ To force a full reseed (e.g. after rotating credentials), use the **Run workflow
 #### Alternative: daily auto-seed via launchd (laptop must be on)
 
 ```bash
-cp backend/scripts/com.kedarkokate.translink-qld-seed.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.kedarkokate.translink-qld-seed.plist
+cp backend/scripts/au.com.transitqld.daily-seed.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/au.com.transitqld.daily-seed.plist
 ```
 
 Same behaviour as the GitHub Actions path, but on your laptop instead of a hosted runner. Use this if the repo is offline or you want to keep seeding local. Logs to `backend/seed-if-changed.log`. **Don't run both at once** — concurrent seeds would race writes to D1.

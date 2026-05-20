@@ -60,7 +60,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
-                    Link(destination: URL(string: "https://translink-qld.kedarkokate.workers.dev/privacy")!) {
+                    Link(destination: URL(string: "https://translink-qld.transitqld.workers.dev/privacy")!) {
                         HStack {
                             Text("Privacy Policy")
                             Spacer()

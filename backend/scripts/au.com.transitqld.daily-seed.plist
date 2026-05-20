@@ -7,19 +7,19 @@
   fires a full seed when TransLink has actually republished.
 
   Install (one-time):
-    cp backend/scripts/com.kedarkokate.translink-qld-seed.plist \
+    cp backend/scripts/au.com.transitqld.daily-seed.plist \
        ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.kedarkokate.translink-qld-seed.plist
+    launchctl load ~/Library/LaunchAgents/au.com.transitqld.daily-seed.plist
 
   Uninstall:
-    launchctl unload ~/Library/LaunchAgents/com.kedarkokate.translink-qld-seed.plist
-    rm ~/Library/LaunchAgents/com.kedarkokate.translink-qld-seed.plist
+    launchctl unload ~/Library/LaunchAgents/au.com.transitqld.daily-seed.plist
+    rm ~/Library/LaunchAgents/au.com.transitqld.daily-seed.plist
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.kedarkokate.translink-qld-seed</string>
+    <string>au.com.transitqld.daily-seed</string>
 
     <key>ProgramArguments</key>
     <array>
