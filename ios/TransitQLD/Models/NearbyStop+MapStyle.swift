@@ -9,10 +9,17 @@ extension NearbyStop {
         return "bus.fill"
     }
 
-    /// Tint color matching `modeSymbolName`.
+    /// Tint colour matching `modeSymbolName`. The four map-pin states —
+    /// bus red, rail indigo, ferry blue, focused-stop green — sit at well-
+    /// separated points on the colour wheel and stay distinguishable under
+    /// the common red-green colour-blindness profiles. Indigo also has
+    /// enough luminance darkness to read as a filled pin on Apple Maps'
+    /// light cream background AND on the dark-mode map (yellow looked
+    /// vibrant on dark but washed out on light), while keeping the white
+    /// SF Symbol icon legible.
     var modeTint: Color {
         if isFerry { return .blue }
-        if isRail  { return .orange }
+        if isRail  { return .indigo }
         return .red
     }
 }
