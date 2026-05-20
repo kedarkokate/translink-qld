@@ -597,15 +597,14 @@ export async function planJourney(
   maxResults: number,
   withTransfers: boolean = false,
 ): Promise<JourneyOption[]> {
-  // Direct + transfer planners use the same nearby-stop call shape (radius
-  // + limit) so a geocoded coord that lands slightly off-centre yields
-  // consistent candidate sets across both algorithms. With limit=15 the
-  // direct planner used to miss feasible board stops that transfer found
-  // (e.g. Hawken Dr stops were beyond direct's reach from St Lucia Golf
-  // Links, so the user saw a slow transfer via Indooroopilly instead of
-  // the direct 411 to the CBD).
-  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 20);
-  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 20);
+  // Both endpoints take up to 40 nearby stops. In dense CBD destinations
+  // (e.g. 266 George St) there are ~30 bus stops within 200 m; a smaller
+  // cap drops the alighting platform for popular routes (Adelaide St
+  // stop 22 for 411) just outside the candidate set even though it's
+  // well within the 800 m walk radius. With direct + transfer matching
+  // the same candidate set, both algorithms see the same trips.
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 40);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 40);
   if (fromStops.length === 0 || toStops.length === 0) return [];
 
   const now = new Date();
@@ -830,8 +829,10 @@ async function planTransferJourneys(
   // sits 600-800 m away. Widening lets the algorithm find a feasible leg-2
   // alight even when the user's geocoded coord isn't on top of a busway.
   const transferWalkM = Math.max(walkRadiusM, 800);
-  const fromStops = await findNearbyStops(env, fromLat, fromLon, transferWalkM, 20);
-  const toStops   = await findNearbyStops(env, toLat,   toLon,   transferWalkM, 20);
+  // Match planJourney's wider 40-stop catchment so direct and transfer
+  // planners see identical candidate sets (see comment in planJourney).
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, transferWalkM, 40);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   transferWalkM, 40);
   if (fromStops.length === 0 || toStops.length === 0) return [];
 
   // Resolve hub parent_stations → their child platform stop_ids.
