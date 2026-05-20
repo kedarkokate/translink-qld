@@ -733,10 +733,15 @@ export async function planJourney(
     });
   }
 
-  // Dedupe: same route, headsign, board+alight stops — keep earliest trip.
+  // Dedupe by (route + headsign): show one "Catch route X to direction Y"
+  // option per direction, picking the variant with the shortest total time.
+  // The wider candidate set (80 nearby stops) tends to produce 5-10 rows for
+  // the same route+headsign, varying only in which Hawken Dr or Adelaide St
+  // platform they use — same bus, same trip, slightly different walks. The
+  // user just wants one row per real option.
   const seen = new Map<string, JourneyOption>();
   for (const c of candidates) {
-    const key = `${c.route.route_id}|${c.headsign ?? ""}|${c.board.stop_id}|${c.alight.stop_id}`;
+    const key = `${c.route.route_id}|${c.headsign ?? ""}`;
     const existing = seen.get(key);
     if (!existing || c.total_minutes < existing.total_minutes) seen.set(key, c);
   }
@@ -1039,11 +1044,13 @@ async function planTransferJourneys(
     }
   }
 
-  // Dedupe by (leg1 route, leg2 route, hub) — keep the earliest journey.
+  // Dedupe by (leg1 route + leg2 route) — show one "ride X, change to Y"
+  // option per route-pair regardless of which specific board/alight
+  // platforms it uses, keeping the variant with the shortest total time.
+  // Matches the direct planner's collapsed dedup.
   const seen = new Map<string, JourneyOption>();
   for (const c of candidates) {
-    const hubKey = hubByStop.get(c.alight.stop_id)?.parent_station ?? c.alight.stop_id;
-    const key = `${c.route.route_id}|${c.transfer!.route.route_id}|${hubKey}`;
+    const key = `${c.route.route_id}|${c.transfer!.route.route_id}`;
     const existing = seen.get(key);
     if (!existing || c.total_minutes < existing.total_minutes) seen.set(key, c);
   }
