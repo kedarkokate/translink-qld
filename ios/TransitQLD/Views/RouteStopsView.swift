@@ -54,7 +54,11 @@ struct RouteStopsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Close")
                 }
             }
             .task(id: shortName) { await load() }

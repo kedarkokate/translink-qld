@@ -62,8 +62,11 @@ struct NearbyStopsView: View {
                     .presentationDetents([.medium, .large])
                 }
                 .sheet(isPresented: $directionsShown) {
-                    DirectionsView()
-                        .presentationDetents([.large])
+                    DirectionsView { stop, routeName in
+                        directionsShown = false
+                        focusOnRouteStop(stop, route: routeName)
+                    }
+                    .presentationDetents([.large])
                 }
                 .sheet(isPresented: $favouritesShown) {
                     FavouritesView()

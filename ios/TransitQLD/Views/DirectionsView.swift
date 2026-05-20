@@ -3,6 +3,12 @@ import MapKit
 import CoreLocation
 
 struct DirectionsView: View {
+    /// Called when the user taps a stop name in a result row. The host
+    /// (`NearbyStopsView`) typically dismisses this sheet and focuses the
+    /// map on the chosen stop with a green pulse, matching the Route
+    /// Lookup → focus-on-map behaviour.
+    let onStopTap: ((NearbyStop, String) -> Void)?
+
     @Environment(LocationManager.self) private var locationManager
     @Environment(\.dismiss) private var dismiss
 
@@ -13,6 +19,10 @@ struct DirectionsView: View {
     @State private var searching = false
     @State private var error: String?
     @State private var routeStopsRequest: RouteStopsRequest?
+
+    init(onStopTap: ((NearbyStop, String) -> Void)? = nil) {
+        self.onStopTap = onStopTap
+    }
 
     enum PickerKind: Identifiable {
         case from, to
@@ -49,7 +59,11 @@ struct DirectionsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Close")
                 }
             }
             .onAppear {
@@ -235,10 +249,16 @@ struct DirectionsView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
+                let leg1RouteName = option.route.routeShortName ?? ""
+                let leg2RouteName = option.transfer?.route.routeShortName ?? ""
+
                 journeyStep(
                     icon: "figure.walk", iconColor: .secondary,
                     primary: "Walk \(option.walkToMinutes) min to \(option.board.stopName)",
                     secondary: "\(option.board.walkDistanceM) m",
+                    onTap: onStopTap.map { handler in
+                        { handler(nearbyStop(from: option.board, routeType: option.route.routeType), leg1RouteName) }
+                    },
                 )
                 // Leg 1's ride. For direct journeys this is the full ride
                 // from board to the final destination; for transfer
@@ -255,6 +275,9 @@ struct DirectionsView: View {
                         iconColor: .orange,
                         primary: "Transfer at \(transfer.board.stopName)",
                         secondary: transferSecondary(transfer),
+                        onTap: onStopTap.map { handler in
+                            { handler(nearbyStop(from: transfer.board, routeType: transfer.route.routeType), leg2RouteName) }
+                        },
                     )
                     journeyStep(
                         icon: routeIcon(transfer.route.routeType),
@@ -263,10 +286,15 @@ struct DirectionsView: View {
                         secondary: "Ride to \(transfer.alight.stopName) → arrive \(formatTime(transfer.alight.effectiveTime))",
                     )
                 }
+                let finalRouteName = option.transfer != nil ? leg2RouteName : leg1RouteName
+                let finalRouteType = option.transfer?.route.routeType ?? option.route.routeType
                 journeyStep(
                     icon: "figure.walk", iconColor: .secondary,
                     primary: "Walk \(option.walkFromMinutes) min from \(finalAlight(option).stopName)",
                     secondary: "\(finalAlight(option).walkDistanceM) m",
+                    onTap: onStopTap.map { handler in
+                        { handler(nearbyStop(from: finalAlight(option), routeType: finalRouteType), finalRouteName) }
+                    },
                 )
             }
 
@@ -301,9 +329,14 @@ struct DirectionsView: View {
         option.transfer?.alight ?? option.alight
     }
 
+    /// One row of a journey breakdown. When `onTap` is provided the row
+    /// renders its primary text in `.accentColor` with a trailing chevron
+    /// and becomes tappable — used for "Walk to X / from X" and "Transfer
+    /// at X" steps so the user can jump to that stop on the map.
     private func journeyStep(
         icon: String, iconColor: Color,
         primary: String, secondary: String,
+        onTap: (() -> Void)? = nil,
     ) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
@@ -311,9 +344,38 @@ struct DirectionsView: View {
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(primary).font(.subheadline)
+                    .foregroundStyle(onTap == nil ? Color.primary : Color.accentColor)
                 Text(secondary).font(.caption).foregroundStyle(.secondary)
             }
+            if onTap != nil {
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { onTap?() }
+    }
+
+    /// Build a minimal `NearbyStop` from a journey leg's stop reference so
+    /// we can hand it to the map's existing `focusOnRouteStop` machinery.
+    /// We don't have stop_code / parent_station here so set defensible
+    /// defaults; the map only cares about coordinate + name + route_types
+    /// for the marker tint.
+    private func nearbyStop(from ref: JourneyStopRef, routeType: Int) -> NearbyStop {
+        NearbyStop(
+            stopId: ref.stopId,
+            stopCode: nil,
+            stopName: ref.stopName,
+            stopLat: ref.stopLat,
+            stopLon: ref.stopLon,
+            locationType: 0,
+            parentStation: nil,
+            platformCode: nil,
+            routeTypes: "\(routeType)",
+            distanceM: Double(ref.walkDistanceM),
+        )
     }
 
     private func routeBadge(_ route: JourneyRoute, headsign: String? = nil) -> some View {

@@ -18,6 +18,7 @@ struct RouteLookupView: View {
 
     // School-routes section state
     @AppStorage("school_routes_radius_m") private var schoolRadiusM: Int = 1000
+    @AppStorage("school_routes_expanded_v1") private var schoolRoutesExpanded: Bool = false
     @State private var schoolMatches: [SchoolRouteMatch] = []
     @State private var searchingSchools = false
     @State private var schoolError: String?
@@ -49,7 +50,11 @@ struct RouteLookupView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Close")
                 }
             }
             .onAppear { inputFocused = true }
@@ -192,58 +197,65 @@ struct RouteLookupView: View {
 
     // MARK: School routes
 
+    /// School routes lives behind a disclosure so the Route sheet opens
+    /// focused on the route-number search. Persists expanded/collapsed
+    /// state so a user who wants school routes daily doesn't have to
+    /// re-tap every time.
     @ViewBuilder
     private var schoolRoutesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        DisclosureGroup(isExpanded: $schoolRoutesExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Text("Within").font(.subheadline).foregroundStyle(.secondary)
+                    Picker("Radius", selection: $schoolRadiusM) {
+                        Text("500 m").tag(500)
+                        Text("1 km").tag(1000)
+                        Text("2 km").tag(2000)
+                        Text("5 km").tag(5000)
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Button {
+                    Task { await searchSchools() }
+                } label: {
+                    Group {
+                        if searchingSchools {
+                            HStack(spacing: 8) {
+                                ProgressView().scaleEffect(0.8)
+                                Text("Searching nearby…")
+                            }
+                        } else {
+                            Label("Find school routes",
+                                  systemImage: "location.magnifyingglass")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(searchingSchools)
+
+                if let schoolError {
+                    Text(schoolError).font(.subheadline).foregroundStyle(.red)
+                }
+
+                if !schoolMatches.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(schoolMatches) { match in
+                            schoolMatchRow(match)
+                        }
+                    }
+                } else if didSearchSchools && !searchingSchools {
+                    Text("No school routes within \(formattedDistance(Double(schoolRadiusM))).")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
             HStack(spacing: 8) {
                 Image(systemName: "graduationcap.fill").foregroundStyle(.indigo)
                 Text("School routes near me").font(.headline)
-            }
-
-            HStack(spacing: 8) {
-                Text("Within").font(.subheadline).foregroundStyle(.secondary)
-                Picker("Radius", selection: $schoolRadiusM) {
-                    Text("500 m").tag(500)
-                    Text("1 km").tag(1000)
-                    Text("2 km").tag(2000)
-                    Text("5 km").tag(5000)
-                }
-                .pickerStyle(.segmented)
-            }
-
-            Button {
-                Task { await searchSchools() }
-            } label: {
-                Group {
-                    if searchingSchools {
-                        HStack(spacing: 8) {
-                            ProgressView().scaleEffect(0.8)
-                            Text("Searching nearby…")
-                        }
-                    } else {
-                        Label("Find school routes",
-                              systemImage: "location.magnifyingglass")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(searchingSchools)
-
-            if let schoolError {
-                Text(schoolError).font(.subheadline).foregroundStyle(.red)
-            }
-
-            if !schoolMatches.isEmpty {
-                VStack(spacing: 8) {
-                    ForEach(schoolMatches) { match in
-                        schoolMatchRow(match)
-                    }
-                }
-            } else if didSearchSchools && !searchingSchools {
-                Text("No school routes within \(formattedDistance(Double(schoolRadiusM))).")
-                    .font(.subheadline).foregroundStyle(.secondary)
             }
         }
     }

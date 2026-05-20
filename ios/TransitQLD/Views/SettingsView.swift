@@ -80,7 +80,11 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Cancel")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
@@ -88,11 +92,13 @@ struct SettingsView: View {
                         dismiss()
                     }
                     .fontWeight(.semibold)
+                    .buttonStyle(.borderedProminent)
                 }
                 ToolbarItem(placement: .bottomBar) {
                     Button("Reset tile order") {
                         order = MapTileOrder.defaultOrder
                     }
+                    .buttonStyle(.bordered)
                 }
             }
         }
