@@ -597,14 +597,16 @@ export async function planJourney(
   maxResults: number,
   withTransfers: boolean = false,
 ): Promise<JourneyOption[]> {
-  // Both endpoints take up to 40 nearby stops. In dense CBD destinations
-  // (e.g. 266 George St) there are ~30 bus stops within 200 m; a smaller
-  // cap drops the alighting platform for popular routes (Adelaide St
-  // stop 22 for 411) just outside the candidate set even though it's
-  // well within the 800 m walk radius. With direct + transfer matching
-  // the same candidate set, both algorithms see the same trips.
-  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 40);
-  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 40);
+  // Up to 80 nearby stops on each side. In dense CBD destinations there can
+  // be 50+ platforms within a small radius (Queen Street has 30+ alone), so
+  // the previous cap of 40 dropped popular alighting platforms (e.g.
+  // Adelaide St stop 22 for route 411 from St Lucia) just outside the
+  // candidate set even though they were well within the 800 m walk radius.
+  // To stay under D1's 100-bound-parameter cap we inline both stop-id
+  // lists as SQL literals — they come from D1, are trusted, and need no
+  // parameter binding.
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 80);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 80);
   if (fromStops.length === 0 || toStops.length === 0) return [];
 
   const now = new Date();
@@ -617,14 +619,8 @@ export async function planJourney(
   const nowLocal = brisbaneClock(now);
   const upper = clockPlusMinutes(nowLocal, windowMinutes);
 
-  // Param layout: ?1..?N = board stops, ?N+1..?N+M = alight stops,
-  // then dateStr, nowLocal, upper.
-  const boardPh = fromStops.map((_, i) => `?${i + 1}`).join(",");
-  const alightOff = fromStops.length + 1;
-  const alightPh = toStops.map((_, i) => `?${i + alightOff}`).join(",");
-  const dateIdx = alightOff + toStops.length;
-  const lowerIdx = dateIdx + 1;
-  const upperIdx = dateIdx + 2;
+  const boardLiteral = fromStops.map(s => `'${s.stop_id.replace(/'/g, "''")}'`).join(",");
+  const alightLiteral = toStops.map(s => `'${s.stop_id.replace(/'/g, "''")}'`).join(",");
 
   // Service-id filter is pushed into a subquery so we don't burn placeholders
   // on the dozens of services active each day. v1 uses calendar only (no
@@ -642,24 +638,19 @@ export async function planJourney(
       ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
     JOIN trips t ON t.trip_id = sa.trip_id
     JOIN routes r ON r.route_id = t.route_id
-    WHERE sa.stop_id IN (${boardPh})
-      AND sb.stop_id IN (${alightPh})
+    WHERE sa.stop_id IN (${boardLiteral})
+      AND sb.stop_id IN (${alightLiteral})
       AND t.service_id IN (
         SELECT service_id FROM calendar
-        WHERE start_date <= ?${dateIdx} AND end_date >= ?${dateIdx} AND ${dowCol} = 1
+        WHERE start_date <= ?1 AND end_date >= ?1 AND ${dowCol} = 1
       )
-      AND sa.departure_time BETWEEN ?${lowerIdx} AND ?${upperIdx}
+      AND sa.departure_time BETWEEN ?2 AND ?3
       AND sa.pickup_type != 1
       AND sb.drop_off_type != 1
     ORDER BY sa.departure_time
     LIMIT 400
   `;
-  const params = [
-    ...fromStops.map(s => s.stop_id),
-    ...toStops.map(s => s.stop_id),
-    dateStr, nowLocal, upper,
-  ];
-  const { results } = await env.DB.prepare(sql).bind(...params).all<CandidateRow>();
+  const { results } = await env.DB.prepare(sql).bind(dateStr, nowLocal, upper).all<CandidateRow>();
   if (!results || results.length === 0) {
     // No direct trips found. Don't return early when transfers are enabled —
     // a journey via a hub may still exist (e.g. Indooroopilly → Carindale,
@@ -829,10 +820,11 @@ async function planTransferJourneys(
   // sits 600-800 m away. Widening lets the algorithm find a feasible leg-2
   // alight even when the user's geocoded coord isn't on top of a busway.
   const transferWalkM = Math.max(walkRadiusM, 800);
-  // Match planJourney's wider 40-stop catchment so direct and transfer
-  // planners see identical candidate sets (see comment in planJourney).
-  const fromStops = await findNearbyStops(env, fromLat, fromLon, transferWalkM, 40);
-  const toStops   = await findNearbyStops(env, toLat,   toLon,   transferWalkM, 40);
+  // 80 nearby stops on each side, matching the direct planner. SQL-side
+  // both lists are inlined as literals (trusted from D1) so we don't blow
+  // past D1's 100-bound-parameter cap.
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, transferWalkM, 80);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   transferWalkM, 80);
   if (fromStops.length === 0 || toStops.length === 0) return [];
 
   // Resolve hub parent_stations → their child platform stop_ids.
@@ -858,11 +850,10 @@ async function planTransferJourneys(
   const upper = clockPlusMinutes(nowLocal, windowMinutes);
   const upperLeg2 = clockPlusMinutes(nowLocal, windowMinutes + 30);
 
+  const boardLiteral = fromStops.map(s => `'${s.stop_id.replace(/'/g, "''")}'`).join(",");
+  const alightLiteral = toStops.map(s => `'${s.stop_id.replace(/'/g, "''")}'`).join(",");
+
   // ---- Leg 1: any fromStop → any hub platform ----
-  const boardPh1 = fromStops.map((_, i) => `?${i + 1}`).join(",");
-  const d1Idx = fromStops.length + 1;
-  const l1Idx = d1Idx + 1;
-  const u1Idx = d1Idx + 2;
   const leg1Sql = `
     SELECT sa.trip_id,
       sa.stop_id AS board_stop, sa.departure_time AS board_time,
@@ -874,26 +865,22 @@ async function planTransferJourneys(
     JOIN stop_times sb ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
     JOIN trips t ON t.trip_id = sa.trip_id
     JOIN routes r ON r.route_id = t.route_id
-    WHERE sa.stop_id IN (${boardPh1})
+    WHERE sa.stop_id IN (${boardLiteral})
       AND sb.stop_id IN (${hubStopLiteral})
       AND t.service_id IN (
         SELECT service_id FROM calendar
-        WHERE start_date <= ?${d1Idx} AND end_date >= ?${d1Idx} AND ${dowCol} = 1
+        WHERE start_date <= ?1 AND end_date >= ?1 AND ${dowCol} = 1
       )
-      AND sa.departure_time BETWEEN ?${l1Idx} AND ?${u1Idx}
+      AND sa.departure_time BETWEEN ?2 AND ?3
       AND sa.pickup_type != 1 AND sb.drop_off_type != 1
     ORDER BY sa.departure_time
     LIMIT 600
   `;
   const { results: leg1Rows = [] } = await env.DB.prepare(leg1Sql)
-    .bind(...fromStops.map(s => s.stop_id), dateStr, nowLocal, upper)
+    .bind(dateStr, nowLocal, upper)
     .all<TransferLegRow>();
 
   // ---- Leg 2: any hub platform → any toStop ----
-  const alightPh2 = toStops.map((_, i) => `?${i + 1}`).join(",");
-  const d2Idx = toStops.length + 1;
-  const l2Idx = d2Idx + 1;
-  const u2Idx = d2Idx + 2;
   const leg2Sql = `
     SELECT sa.trip_id,
       sa.stop_id AS board_stop, sa.departure_time AS board_time,
@@ -906,18 +893,18 @@ async function planTransferJourneys(
     JOIN trips t ON t.trip_id = sa.trip_id
     JOIN routes r ON r.route_id = t.route_id
     WHERE sa.stop_id IN (${hubStopLiteral})
-      AND sb.stop_id IN (${alightPh2})
+      AND sb.stop_id IN (${alightLiteral})
       AND t.service_id IN (
         SELECT service_id FROM calendar
-        WHERE start_date <= ?${d2Idx} AND end_date >= ?${d2Idx} AND ${dowCol} = 1
+        WHERE start_date <= ?1 AND end_date >= ?1 AND ${dowCol} = 1
       )
-      AND sa.departure_time BETWEEN ?${l2Idx} AND ?${u2Idx}
+      AND sa.departure_time BETWEEN ?2 AND ?3
       AND sa.pickup_type != 1 AND sb.drop_off_type != 1
     ORDER BY sa.departure_time
     LIMIT 600
   `;
   const { results: leg2Rows = [] } = await env.DB.prepare(leg2Sql)
-    .bind(...toStops.map(s => s.stop_id), dateStr, nowLocal, upperLeg2)
+    .bind(dateStr, nowLocal, upperLeg2)
     .all<TransferLegRow>();
 
   if (!leg1Rows.length || !leg2Rows.length) return [];
