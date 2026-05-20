@@ -654,7 +654,18 @@ export async function planJourney(
     dateStr, nowLocal, upper,
   ];
   const { results } = await env.DB.prepare(sql).bind(...params).all<CandidateRow>();
-  if (!results || results.length === 0) return [];
+  if (!results || results.length === 0) {
+    // No direct trips found. Don't return early when transfers are enabled —
+    // a journey via a hub may still exist (e.g. Indooroopilly → Carindale,
+    // where no single bus connects but bus → CBD hub → bus does).
+    if (withTransfers) {
+      return await planTransferJourneys(
+        env, fromLat, fromLon, toLat, toLon,
+        windowMinutes, walkRadiusM, maxResults,
+      );
+    }
+    return [];
+  }
 
   const tripUpdates = await getTripUpdates(env).catch(() => new Map());
   const nowMs = now.getTime();
@@ -811,7 +822,6 @@ async function planTransferJourneys(
      FROM stops WHERE parent_station IN (${hubPh})`
   ).bind(...TRANSIT_HUBS).all<HubPlatform>();
   const hubPlatforms = hubRes.results ?? [];
-  console.log(`[transfer] hubPlatforms=${hubPlatforms.length}`);
   if (hubPlatforms.length === 0) return [];
   const hubByStop = new Map<string, HubPlatform>(
     hubPlatforms.map(p => [p.stop_id, p])
@@ -889,7 +899,6 @@ async function planTransferJourneys(
   const { results: leg2Rows = [] } = await env.DB.prepare(leg2Sql)
     .bind(...toStops.map(s => s.stop_id), dateStr, nowLocal, upperLeg2)
     .all<TransferLegRow>();
-  console.log(`[transfer] leg1Rows=${leg1Rows.length} leg2Rows=${leg2Rows.length}`);
 
   if (!leg1Rows.length || !leg2Rows.length) return [];
 
@@ -1023,7 +1032,6 @@ async function planTransferJourneys(
     }
   }
 
-  console.log(`[transfer] candidates=${candidates.length}`);
   // Dedupe by (leg1 route, leg2 route, hub) — keep the earliest journey.
   const seen = new Map<string, JourneyOption>();
   for (const c of candidates) {
