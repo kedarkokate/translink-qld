@@ -428,11 +428,12 @@ struct DirectionsView: View {
     }
 
     private let noRoutesMessage = """
-    No direct transit routes were found within ~500 m walking distance and \
-    the next 90 minutes.
+    No transit options found within ~500 m walking distance and the next \
+    90 minutes — direct or via a hub transfer.
 
-    This version only finds single-trip journeys (no transfers). For longer \
-    or transfer-needing trips, open Apple Maps below.
+    This can mean both ends are too far from any TransLink stop, or the \
+    relevant routes aren't running right now. For an alternative routing \
+    (multiple transfers, walking + ride-share), open Apple Maps below.
     """
 
     private func openInAppleMaps() {

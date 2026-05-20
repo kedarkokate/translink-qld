@@ -468,36 +468,63 @@ const WALK_SPEED_M_PER_MIN = 80;  // ~5 km/h, typical urban walking pace
 const MIN_TRANSFER_MINUTES = 3;   // cross-platform wait at a hub
 const MAX_TRANSFER_MINUTES = 30;  // beyond this, two trips with a transfer
 
-/// Top-25 SEQ transit hubs (parent_stations) by distinct routes served.
-/// Identified from D1 with COUNT(DISTINCT route_id) GROUP BY parent_station.
-/// Each entry below is the `parent_station` id — at query time we resolve
-/// child platform stop_ids via the stops table.
+/// SEQ transit hubs (parent_stations) used as transfer anchors. Combines
+/// the top train stations *and* the major busways: real Brisbane transfers
+/// frequently happen at busways (Cultural Centre, King George Square,
+/// Mt Gravatt, Carindale) rather than train platforms. Identified from D1
+/// with `COUNT(DISTINCT route_id) GROUP BY parent_station`, separately for
+/// all modes and for bus-only (route_type=3). Each entry is a
+/// `parent_station` id; child platform stop_ids are resolved at query
+/// time via the stops table.
 const TRANSIT_HUBS: readonly string[] = [
+  // ---- Train stations (rail) ----
   "place_bowsta",  // Bowen Hills station
   "place_romsta",  // Roma Street station
   "place_forsta",  // Fortitude Valley station
   "place_censta",  // Central station
   "place_egjsta",  // Eagle Junction station
   "place_norsta",  // Northgate station
-  "place_sousta",  // South Brisbane station
-  "place_sbasta",  // South Bank station
-  "place_parsta",  // Park Road / Boggo Road station
   "place_petsta",  // Petrie station
+  "place_parsta",  // Park Road / Boggo Road station
+  "place_twgsta",  // Toowong station
+  "place_indsta",  // Indooroopilly station
+  "place_shesta",  // Sherwood station
   "place_milsta",  // Milton station
   "place_darsta",  // Darra station
   "place_oxlsta",  // Oxley station
   "place_corsta",  // Corinda station
-  "place_twgsta",  // Toowong station
-  "place_indsta",  // Indooroopilly station
-  "place_shesta",  // Sherwood station
   "place_albsta",  // Albion station
   "place_wolsta",  // Wooloowin station
+  "place_sousta",  // South Brisbane station
+  "place_sbasta",  // South Bank station (train)
   "place_beesta",  // Beenleigh station
   "place_logsta",  // Loganlea station
   "place_cabstn",  // Caboolture station
   "place_ipssta",  // Ipswich station
-  "place_burbs",   // Buranda busway station
   "place_spcsta",  // Springfield Central station
+  // ---- Busways + bus interchanges ----
+  "place_burbs",   // Buranda busway station
+  "place_grunbs",  // Griffith University station
+  "place_ccbs",    // Cultural Centre busway station
+  "place_rompl",   // Roma Street busway station
+  "place_upmgbs",  // Upper Mt Gravatt station
+  "place_sbank",   // South Bank busway station
+  "place_mater",   // Mater Hill busway station
+  "place_empbs",   // Eight Mile Plains station
+  "place_wogba",   // Woolloongabba busway station
+  "place_intind",  // Indooroopilly Shopping Centre interchange
+  "place_rbwhp",   // RBWH busway station
+  "place_intcar",  // Carindale Shopping Centre interchange
+  "place_qsbs",    // Queen Street bus station
+  "place_intgcy",  // Garden City Shopping Centre interchange
+  "place_inttbl",  // Toombul Shopping Centre interchange
+  "place_sprbst",  // Springwood station
+  "place_grebs",   // Greenslopes busway station
+  "place_pahste",  // PA Hospital busway station
+  "place_qukgbs",  // QUT Kelvin Grove station
+  "place_rchbs",   // Herston busway station
+  "place_namsta",  // Nambour station
+  "place_brsstn",  // Broadbeach South station (Gold Coast G:link)
 ];
 
 export interface JourneyOption {
@@ -767,8 +794,14 @@ async function planTransferJourneys(
   walkRadiusM: number,
   maxResults: number,
 ): Promise<JourneyOption[]> {
-  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 10);
-  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 10);
+  // For transfer journeys we widen both the walk radius and the stop count:
+  // many real destinations have residential bus stops in the strict 500 m
+  // radius but the actual hub-served interchange (e.g. Carindale Shopping)
+  // sits 600-800 m away. Widening lets the algorithm find a feasible leg-2
+  // alight even when the user's geocoded coord isn't on top of a busway.
+  const transferWalkM = Math.max(walkRadiusM, 800);
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, transferWalkM, 20);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   transferWalkM, 20);
   if (fromStops.length === 0 || toStops.length === 0) return [];
 
   // Resolve hub parent_stations → their child platform stop_ids.
@@ -778,6 +811,7 @@ async function planTransferJourneys(
      FROM stops WHERE parent_station IN (${hubPh})`
   ).bind(...TRANSIT_HUBS).all<HubPlatform>();
   const hubPlatforms = hubRes.results ?? [];
+  console.log(`[transfer] hubPlatforms=${hubPlatforms.length}`);
   if (hubPlatforms.length === 0) return [];
   const hubByStop = new Map<string, HubPlatform>(
     hubPlatforms.map(p => [p.stop_id, p])
@@ -855,6 +889,7 @@ async function planTransferJourneys(
   const { results: leg2Rows = [] } = await env.DB.prepare(leg2Sql)
     .bind(...toStops.map(s => s.stop_id), dateStr, nowLocal, upperLeg2)
     .all<TransferLegRow>();
+  console.log(`[transfer] leg1Rows=${leg1Rows.length} leg2Rows=${leg2Rows.length}`);
 
   if (!leg1Rows.length || !leg2Rows.length) return [];
 
@@ -988,6 +1023,7 @@ async function planTransferJourneys(
     }
   }
 
+  console.log(`[transfer] candidates=${candidates.length}`);
   // Dedupe by (leg1 route, leg2 route, hub) — keep the earliest journey.
   const seen = new Map<string, JourneyOption>();
   for (const c of candidates) {
