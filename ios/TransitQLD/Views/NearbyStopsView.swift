@@ -15,6 +15,13 @@ struct NearbyStopsView: View {
     @State private var settingsShown = false
     @State private var focusedStop: NearbyStop?
     @State private var focusedRoute: String?
+    /// In-memory snapshot of a journey the user pinned from the Directions
+    /// sheet. Survives sheet dismissal so the user can navigate the map
+    /// to find stops / inspect routes without losing the chosen plan,
+    /// but is intentionally not persisted across app launches — pins are
+    /// "for this trip" and stop being relevant tomorrow.
+    @State private var pinnedJourney: JourneyOption?
+    @State private var pinnedJourneyShown = false
     @AppStorage(TilePosition.storageKey) private var tilePositionRaw: String = TilePosition.defaultValue.rawValue
     @AppStorage(TileOrientation.storageKey) private var tileOrientationRaw: String = TileOrientation.defaultValue.rawValue
     @AppStorage(MapTileOrder.storageKey) private var tileOrderRaw: String = MapTileOrder.defaultRaw
@@ -62,11 +69,27 @@ struct NearbyStopsView: View {
                     .presentationDetents([.medium, .large])
                 }
                 .sheet(isPresented: $directionsShown) {
-                    DirectionsView { stop, routeName in
-                        directionsShown = false
-                        focusOnRouteStop(stop, route: routeName)
-                    }
+                    DirectionsView(
+                        pinnedJourney: $pinnedJourney,
+                        onStopTap: { stop, routeName in
+                            directionsShown = false
+                            focusOnRouteStop(stop, route: routeName)
+                        },
+                    )
                     .presentationDetents([.large])
+                }
+                .sheet(isPresented: $pinnedJourneyShown) {
+                    if let pinnedJourney {
+                        PinnedJourneyView(
+                            option: pinnedJourney,
+                            onUnpin: { self.pinnedJourney = nil; pinnedJourneyShown = false },
+                            onStopTap: { stop, routeName in
+                                pinnedJourneyShown = false
+                                focusOnRouteStop(stop, route: routeName)
+                            },
+                        )
+                        .presentationDetents([.medium, .large])
+                    }
                 }
                 .sheet(isPresented: $favouritesShown) {
                     FavouritesView()
@@ -119,9 +142,66 @@ struct NearbyStopsView: View {
                 .animation(.spring(duration: 0.3), value: tileOrientation)
         }
         .overlay(alignment: .top) {
-            emptyAreaHint
-                .padding(.top, 12)
-                .padding(.horizontal, 16)
+            VStack(spacing: 8) {
+                pinnedJourneyBanner
+                emptyAreaHint
+            }
+            .padding(.top, 12)
+            .padding(.horizontal, 16)
+        }
+    }
+
+    /// Compact banner above the map summarising a journey the user pinned
+    /// from the Directions sheet. Tap to open the detail sheet; the small
+    /// X button clears the pin. Sized small enough that it doesn't smother
+    /// the map but visible enough to keep the user's plan in sight.
+    @ViewBuilder
+    private var pinnedJourneyBanner: some View {
+        if let p = pinnedJourney {
+            HStack(spacing: 10) {
+                Image(systemName: "pin.fill")
+                    .foregroundStyle(.orange)
+                    .font(.subheadline)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(p.route.routeShortName ?? p.route.routeLongName ?? "")
+                            .font(.subheadline.weight(.bold))
+                        if let t = p.transfer {
+                            Image(systemName: "arrow.right")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(t.route.routeShortName ?? t.route.routeLongName ?? "")
+                                .font(.subheadline.weight(.bold))
+                        }
+                        Text("· \(p.totalMinutes) min")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    if let headsign = p.headsign {
+                        Text("→ \(headsign)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                Button {
+                    pinnedJourney = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Unpin journey")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.quaternary, lineWidth: 0.5))
+            .contentShape(Rectangle())
+            .onTapGesture { pinnedJourneyShown = true }
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 

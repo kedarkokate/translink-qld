@@ -3,6 +3,12 @@ import MapKit
 import CoreLocation
 
 struct DirectionsView: View {
+    /// Optional binding to the user's pinned journey. When set, the result
+    /// list shows a Pin / Unpin toggle on each row; tapping it captures or
+    /// clears the in-memory snapshot held by `NearbyStopsView` so the user
+    /// can dismiss the Directions sheet without losing the chosen plan.
+    @Binding var pinnedJourney: JourneyOption?
+
     /// Called when the user taps a stop name in a result row. The host
     /// (`NearbyStopsView`) typically dismisses this sheet and focuses the
     /// map on the chosen stop with a green pulse, matching the Route
@@ -20,7 +26,11 @@ struct DirectionsView: View {
     @State private var error: String?
     @State private var routeStopsRequest: RouteStopsRequest?
 
-    init(onStopTap: ((NearbyStop, String) -> Void)? = nil) {
+    init(
+        pinnedJourney: Binding<JourneyOption?> = .constant(nil),
+        onStopTap: ((NearbyStop, String) -> Void)? = nil,
+    ) {
+        self._pinnedJourney = pinnedJourney
         self.onStopTap = onStopTap
     }
 
@@ -232,6 +242,7 @@ struct DirectionsView: View {
                     .foregroundStyle(.green)
                 }
                 Spacer()
+                pinButton(for: option)
                 if isBest {
                     Text("Best")
                         .font(.caption.weight(.semibold))
@@ -356,6 +367,29 @@ struct DirectionsView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { onTap?() }
+    }
+
+    /// Pin / unpin toggle on each result row. Pinning captures this journey
+    /// option as an in-memory snapshot on the host so the user can dismiss
+    /// the Directions sheet, navigate the map, and refer back to the plan
+    /// via the pinned banner above the map. Tapping while pinned (filled
+    /// pin icon) unpins. Only ever one pinned journey at a time — re-tapping
+    /// a different row replaces the pin.
+    @ViewBuilder
+    private func pinButton(for option: JourneyOption) -> some View {
+        let isPinned = pinnedJourney?.id == option.id
+        Button {
+            pinnedJourney = isPinned ? nil : option
+        } label: {
+            Image(systemName: isPinned ? "pin.fill" : "pin")
+                .font(.subheadline)
+                .foregroundStyle(isPinned ? .orange : .secondary)
+                .rotationEffect(.degrees(isPinned ? 0 : 45))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isPinned ? "Unpin journey" : "Pin this journey")
     }
 
     /// Build a minimal `NearbyStop` from a journey leg's stop reference so
