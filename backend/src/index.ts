@@ -8,6 +8,7 @@ import {
 } from "./queries";
 import { getVehiclePositions } from "./gtfsRt";
 import { PRIVACY_HTML } from "./privacy";
+import { SUPPORT_HTML } from "./support";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -15,6 +16,12 @@ app.use("*", cors({ origin: "*", maxAge: 600 }));
 
 app.get("/privacy", c =>
   c.html(PRIVACY_HTML, 200, {
+    "Cache-Control": "public, max-age=3600",
+  }),
+);
+
+app.get("/support", c =>
+  c.html(SUPPORT_HTML, 200, {
     "Cache-Control": "public, max-age=3600",
   }),
 );
