@@ -754,8 +754,10 @@ export async function planJourney(
   let allOptions = Array.from(seen.values());
 
   // If the client opted in, also try hub-anchored one-transfer journeys and
-  // merge them with the direct options. Combined results sort by total
-  // minutes — a faster direct ride still wins over a slower transfer.
+  // merge them with the direct options. Sort score adds a transfer penalty
+  // so a transfer route only beats a direct one when it's *significantly*
+  // faster — matches user intuition (transfers have hidden cost: missed
+  // connections, anxiety, real-world delays) and standard transit-app UX.
   if (withTransfers) {
     const transferOptions = await planTransferJourneys(
       env, fromLat, fromLon, toLat, toLon,
@@ -765,8 +767,18 @@ export async function planJourney(
   }
 
   return allOptions
-    .sort((a, b) => a.total_minutes - b.total_minutes)
+    .sort((a, b) => scoreOption(a) - scoreOption(b))
     .slice(0, maxResults);
+}
+
+/// Penalty added to a transfer journey's total minutes for sorting. A
+/// direct 58-min ride should beat a transfer 50-min ride; a transfer that
+/// saves 12+ min over the next direct still wins. Display total_minutes
+/// stays accurate — only the sort score is biased.
+const TRANSFER_PENALTY_MINUTES = 10;
+
+function scoreOption(o: JourneyOption): number {
+  return o.total_minutes + (o.transfer ? TRANSFER_PENALTY_MINUTES : 0);
 }
 
 interface HubPlatform {
