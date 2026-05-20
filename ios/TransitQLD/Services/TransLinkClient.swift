@@ -81,7 +81,11 @@ final class TransLinkClient {
         from: CLLocationCoordinate2D,
         to: CLLocationCoordinate2D,
         windowMin: Int = 90,
-        walkM: Int = 500,
+        // 800 m ≈ 10 min walk. The previous 500 m default frequently missed
+        // viable direct boarding stops when the user's geocoded origin was
+        // off-centre (e.g. a park or shopping centre), pushing users onto
+        // longer transfer journeys with the smaller direct catchment.
+        walkM: Int = 800,
         limit: Int = 12,
     ) async throws -> [JourneyOption] {
         struct Resp: Decodable { let options: [JourneyOption] }

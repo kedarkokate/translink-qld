@@ -597,8 +597,15 @@ export async function planJourney(
   maxResults: number,
   withTransfers: boolean = false,
 ): Promise<JourneyOption[]> {
-  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 15);
-  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 15);
+  // Direct + transfer planners use the same nearby-stop call shape (radius
+  // + limit) so a geocoded coord that lands slightly off-centre yields
+  // consistent candidate sets across both algorithms. With limit=15 the
+  // direct planner used to miss feasible board stops that transfer found
+  // (e.g. Hawken Dr stops were beyond direct's reach from St Lucia Golf
+  // Links, so the user saw a slow transfer via Indooroopilly instead of
+  // the direct 411 to the CBD).
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 20);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 20);
   if (fromStops.length === 0 || toStops.length === 0) return [];
 
   const now = new Date();
