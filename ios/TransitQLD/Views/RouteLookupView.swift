@@ -63,6 +63,22 @@ struct RouteLookupView: View {
                     .buttonStyle(.bordered)
                     .accessibilityLabel("Close")
                 }
+                // System .numberPad has no Return key, so without this the
+                // user has to reach all the way back up to the Search button
+                // next to the input. The keyboard accessory keeps Search
+                // one tap away from the digits they just typed.
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button {
+                        inputFocused = false
+                        Task { await search() }
+                    } label: {
+                        Label("Search", systemImage: "magnifyingglass")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || searching)
+                }
             }
             .onAppear { inputFocused = true }
             .sheet(item: $routeStopsRequest) { req in
