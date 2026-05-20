@@ -327,6 +327,11 @@ export interface SchoolRouteMatch {
   route_type: number;
   school_headsign: string;
   nearest_stop: StopWithDistance;
+  /// ISO timestamp of the next scheduled departure of this route/headsign
+  /// from `nearest_stop`, looking forward up to 7 days. Null when no
+  /// service is running in that window (long school holiday, route
+  /// suspended, etc.).
+  next_departure: string | null;
 }
 
 interface SchoolRouteRow {
@@ -334,6 +339,9 @@ interface SchoolRouteRow {
   route_long_name: string | null;
   route_type: number;
   trip_headsign: string;
+  trip_id: string;
+  departure_time: string;
+  service_id: string;
   stop_id: string;
   stop_code: string | null;
   stop_name: string;
@@ -352,9 +360,11 @@ export async function findSchoolRoutesNear(
   const bbox = boundingBox(lat, lon, radiusM);
   // The patterns target headsigns that name an actual school/college rather
   // than street addresses like "Suburb, College Ave" or "X, School Rd".
+  // Includes stop_times + service_id so we can compute "next departure"
+  // per (route, headsign, stop) in JS without a second round-trip to D1.
   const { results } = await env.DB.prepare(
     `WITH school_trips AS (
-       SELECT t.trip_id, t.trip_headsign,
+       SELECT t.trip_id, t.trip_headsign, t.service_id,
               r.route_short_name, r.route_long_name, r.route_type
        FROM trips t
        JOIN routes r ON r.route_id = t.route_id
@@ -367,9 +377,10 @@ export async function findSchoolRoutesNear(
           OR LOWER(t.trip_headsign) LIKE '%state school%'
           OR LOWER(t.trip_headsign) LIKE '%state high%'
      )
-     SELECT DISTINCT
+     SELECT
        st.route_short_name, st.route_long_name, st.route_type,
-       st.trip_headsign,
+       st.trip_headsign, st.trip_id, st.service_id,
+       stm.departure_time,
        s.stop_id, s.stop_code, s.stop_name, s.stop_lat, s.stop_lon,
        s.location_type, s.parent_station, s.platform_code, s.route_types
      FROM school_trips st
@@ -382,33 +393,159 @@ export async function findSchoolRoutesNear(
 
   if (!results || results.length === 0) return [];
 
+  // Pre-fetch the 7-day calendar slice: for each of today + next 6 days,
+  // which service_ids are active. This is cheap (one query, ≤ a few
+  // hundred rows for a single week's services) and lets us answer
+  // "when is the next school bus" without falling out of school terms.
+  const now = new Date();
+  const activeByDate = await fetchActiveServicesNext7Days(env, now);
+
   // Group by (route_short_name, school_headsign), keep the closest stop.
-  const grouped = new Map<string, SchoolRouteMatch>();
+  // For each group, collect every (stop_time, service_id) candidate at
+  // that stop so we can pick the earliest valid departure afterwards.
+  interface Candidate {
+    departure_time: string;
+    service_id: string;
+    stop_id: string;
+  }
+  interface AccumulatedMatch {
+    match: SchoolRouteMatch;
+    candidates: Candidate[];
+  }
+  const grouped = new Map<string, AccumulatedMatch>();
+
   for (const r of results) {
     const distance = haversineMeters(lat, lon, r.stop_lat, r.stop_lon);
     if (distance > radiusM) continue;
     const key = `${r.route_short_name}|${r.trip_headsign}`;
-    const existing = grouped.get(key);
-    if (!existing || distance < existing.nearest_stop.distance_m) {
-      grouped.set(key, {
-        route_short_name: r.route_short_name,
-        route_long_name: r.route_long_name,
-        route_type: r.route_type,
-        school_headsign: r.trip_headsign,
-        nearest_stop: {
-          stop_id: r.stop_id, stop_code: r.stop_code, stop_name: r.stop_name,
-          stop_lat: r.stop_lat, stop_lon: r.stop_lon,
-          location_type: r.location_type, parent_station: r.parent_station,
-          platform_code: r.platform_code, route_types: r.route_types,
-          distance_m: distance,
+    let entry = grouped.get(key);
+    if (!entry) {
+      entry = {
+        match: {
+          route_short_name: r.route_short_name,
+          route_long_name: r.route_long_name,
+          route_type: r.route_type,
+          school_headsign: r.trip_headsign,
+          nearest_stop: {
+            stop_id: r.stop_id, stop_code: r.stop_code, stop_name: r.stop_name,
+            stop_lat: r.stop_lat, stop_lon: r.stop_lon,
+            location_type: r.location_type, parent_station: r.parent_station,
+            platform_code: r.platform_code, route_types: r.route_types,
+            distance_m: distance,
+          },
+          next_departure: null,
         },
+        candidates: [],
+      };
+      grouped.set(key, entry);
+    } else if (distance < entry.match.nearest_stop.distance_m) {
+      // Found a closer stop for this (route, headsign) — swap. Drop
+      // candidates from the previous (farther) stop; we'll only count
+      // departures from the closest one.
+      entry.match.nearest_stop = {
+        stop_id: r.stop_id, stop_code: r.stop_code, stop_name: r.stop_name,
+        stop_lat: r.stop_lat, stop_lon: r.stop_lon,
+        location_type: r.location_type, parent_station: r.parent_station,
+        platform_code: r.platform_code, route_types: r.route_types,
+        distance_m: distance,
+      };
+      entry.candidates = entry.candidates.filter(c => c.stop_id === r.stop_id);
+    }
+    if (r.stop_id === entry.match.nearest_stop.stop_id) {
+      entry.candidates.push({
+        departure_time: r.departure_time,
+        service_id: r.service_id,
+        stop_id: r.stop_id,
       });
     }
   }
 
+  // For each match, look forward up to 7 days and pick the earliest
+  // departure whose service_id is active on that date. Anchors GTFS
+  // HH:MM:SS departure to the candidate date's midnight (GTFS allows
+  // values past 24:00:00 for late-night trips); the first hit wins.
+  const nowMs = now.getTime();
+  for (const entry of grouped.values()) {
+    let earliest: number | null = null;
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+      const day = offsetDate(now, dayOffset);
+      const dateStr = brisbaneDateISO(day).replaceAll("-", "");
+      const active = activeByDate.get(dateStr) ?? new Set<string>();
+      if (active.size === 0) continue;
+      for (const c of entry.candidates) {
+        if (!active.has(c.service_id)) continue;
+        const candidateMs = applyGtfsTime(day, c.departure_time);
+        if (candidateMs < nowMs - 60_000) continue;
+        if (earliest === null || candidateMs < earliest) earliest = candidateMs;
+      }
+      if (earliest !== null) break;
+    }
+    if (earliest !== null) entry.match.next_departure = new Date(earliest).toISOString();
+  }
+
   return Array.from(grouped.values())
+    .map(e => e.match)
     .sort((a, b) => a.nearest_stop.distance_m - b.nearest_stop.distance_m)
     .slice(0, limit);
+}
+
+/// One query returning every service_id active on each of today and the
+/// next 6 days. Result is a map from yyyymmdd → Set<service_id>. Used by
+/// the school-route planner to answer "next departure" without doing
+/// per-match SQL round-trips.
+async function fetchActiveServicesNext7Days(
+  env: Env, now: Date,
+): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  const dates: { dateStr: string; dowCol: string }[] = [];
+  for (let i = 0; i < 7; i++) {
+    const day = offsetDate(now, i);
+    dates.push({
+      dateStr: brisbaneDateISO(day).replaceAll("-", ""),
+      dowCol: dayOfWeekColumn(brisbaneDateISO(day).replaceAll("-", "")),
+    });
+  }
+  // Build one query that ORs across all days; cheaper than 7 round-trips.
+  // Bind ?1..?7 to the 7 dateStrings; each clause references its own slot.
+  const clauses = dates.map((d, i) =>
+    `(start_date <= ?${i + 1} AND end_date >= ?${i + 1} AND ${d.dowCol} = 1)`
+  );
+  const sql = `SELECT service_id, start_date, end_date,
+                      monday, tuesday, wednesday, thursday, friday, saturday, sunday
+               FROM calendar
+               WHERE ${clauses.join(" OR ")}`;
+  const { results } = await env.DB.prepare(sql).bind(...dates.map(d => d.dateStr)).all<{
+    service_id: string;
+    start_date: string; end_date: string;
+    monday: number; tuesday: number; wednesday: number;
+    thursday: number; friday: number; saturday: number; sunday: number;
+  }>();
+  for (const d of dates) out.set(d.dateStr, new Set<string>());
+  for (const row of results ?? []) {
+    for (const d of dates) {
+      if (row.start_date > d.dateStr || row.end_date < d.dateStr) continue;
+      const dow = dayOfWeekFlag(row, d.dowCol);
+      if (dow === 1) out.get(d.dateStr)?.add(row.service_id);
+    }
+  }
+  return out;
+}
+
+function dayOfWeekFlag(
+  row: { monday: number; tuesday: number; wednesday: number;
+         thursday: number; friday: number; saturday: number; sunday: number },
+  col: string,
+): number {
+  switch (col) {
+    case "monday":    return row.monday;
+    case "tuesday":   return row.tuesday;
+    case "wednesday": return row.wednesday;
+    case "thursday":  return row.thursday;
+    case "friday":    return row.friday;
+    case "saturday":  return row.saturday;
+    case "sunday":    return row.sunday;
+    default:          return 0;
+  }
 }
 
 export async function findNearestStopForRoute(

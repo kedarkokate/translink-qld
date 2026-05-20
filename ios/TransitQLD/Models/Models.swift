@@ -354,6 +354,10 @@ struct SchoolRouteMatch: Codable, Identifiable {
     let routeType: Int
     let schoolHeadsign: String
     let nearestStop: NearbyStop
+    /// Next scheduled departure of this route/headsign from `nearestStop`,
+    /// looking forward up to 7 days. Nil if no service is running in that
+    /// window (school holiday, etc.).
+    let nextDeparture: Date?
 
     var id: String { "\(routeShortName)|\(schoolHeadsign)" }
 
@@ -363,6 +367,7 @@ struct SchoolRouteMatch: Codable, Identifiable {
         case routeType = "route_type"
         case schoolHeadsign = "school_headsign"
         case nearestStop = "nearest_stop"
+        case nextDeparture = "next_departure"
     }
 }
 

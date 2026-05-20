@@ -278,6 +278,14 @@ struct RouteLookupView: View {
                             .font(.subheadline).lineLimit(1)
                         Text("\(formattedDistance(match.nearestStop.distanceM)) · \(match.nearestStop.stopName)")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        if let next = match.nextDeparture {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                Text("Next: \(formatNextDeparture(next))")
+                            }
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.indigo)
+                        }
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
@@ -301,6 +309,32 @@ struct RouteLookupView: View {
     }
 
     // MARK: Helpers
+
+    /// Formats the next-service timestamp relative to "now":
+    ///   - Today  → "08:13 (in 23 min)" or "08:13"
+    ///   - Tomorrow → "Tomorrow, 08:13"
+    ///   - Same week  → "Fri, 08:13"
+    ///   - Further → "Mon 25 May, 08:13"
+    private func formatNextDeparture(_ d: Date) -> String {
+        let cal = Calendar.current
+        let now = Date()
+        let time = d.formatted(date: .omitted, time: .shortened)
+        if cal.isDateInToday(d) {
+            let mins = Int(d.timeIntervalSince(now) / 60)
+            if mins <= 0 { return "\(time) (now)" }
+            if mins <= 60 { return "\(time) (in \(mins) min)" }
+            return time
+        }
+        if cal.isDateInTomorrow(d) { return "Tomorrow, \(time)" }
+        let daysAhead = cal.dateComponents([.day], from: cal.startOfDay(for: now),
+                                           to: cal.startOfDay(for: d)).day ?? 0
+        if daysAhead < 7 {
+            let weekday = d.formatted(.dateTime.weekday(.abbreviated))
+            return "\(weekday), \(time)"
+        }
+        let dayAndDate = d.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        return "\(dayAndDate), \(time)"
+    }
 
     private func formattedDistance(_ m: Double) -> String {
         m < 1000 ? "\(Int(m)) m" : String(format: "%.1f km", m / 1000)
