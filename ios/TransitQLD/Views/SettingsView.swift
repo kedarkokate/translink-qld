@@ -33,6 +33,12 @@ struct SettingsView: View {
                     .onMove { from, to in
                         order.move(fromOffsets: from, toOffset: to)
                     }
+                    Button {
+                        order = MapTileOrder.defaultOrder
+                    } label: {
+                        Label("Reset to defaults", systemImage: "arrow.uturn.backward")
+                            .foregroundStyle(.red)
+                    }
                 } header: {
                     Text("Drag to reorder the tiles on the map")
                         .textCase(nil)
@@ -93,12 +99,6 @@ struct SettingsView: View {
                     }
                     .fontWeight(.semibold)
                     .buttonStyle(.borderedProminent)
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    Button("Reset tile order") {
-                        order = MapTileOrder.defaultOrder
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
         }
