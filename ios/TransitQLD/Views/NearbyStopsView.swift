@@ -66,7 +66,7 @@ struct NearbyStopsView: View {
                     RouteLookupView { stop, routeName in
                         focusOnRouteStop(stop, route: routeName)
                     }
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents([.large])
                 }
                 .sheet(isPresented: $directionsShown) {
                     DirectionsView(
