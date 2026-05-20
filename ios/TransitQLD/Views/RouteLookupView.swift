@@ -24,6 +24,10 @@ struct RouteLookupView: View {
     @State private var schoolError: String?
     @State private var didSearchSchools = false
 
+    // Train-lines section: collapsed by default; persisted per-user so a
+    // regular train rider doesn't have to re-expand it on every visit.
+    @AppStorage("train_lines_expanded_v1") private var trainLinesExpanded: Bool = false
+
     @State private var routeStopsRequest: RouteStopsRequest?
     @FocusState private var inputFocused: Bool
 
@@ -39,6 +43,9 @@ struct RouteLookupView: View {
                         Divider()
                         resultCard(result)
                     }
+
+                    Divider().padding(.top, 4)
+                    trainLinesSection
 
                     Divider().padding(.top, 4)
                     schoolRoutesSection
@@ -68,39 +75,69 @@ struct RouteLookupView: View {
 
     @ViewBuilder
     private var searchBar: some View {
-        HStack(spacing: 8) {
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Route number (e.g. 66, M2, N100)", text: $input)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.characters)
-                    .focused($inputFocused)
-                    .onSubmit { Task { await search() } }
-                if !input.isEmpty {
-                    Button {
-                        input = ""; result = nil; error = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Route number (e.g. 66, M2, N100)", text: $input)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.characters)
+                        // Routes the user actually types are either pure-numeric
+                        // (200, 411, 192…) or one of three letter-prefix
+                        // families: F (ferry), M (Metro), N (NightLink). The
+                        // full QWERTY keyboard was overkill; the numberPad
+                        // plus the inline prefix chips below the bar covers
+                        // >99% of inputs. Train lines have their own section.
+                        .keyboardType(.numberPad)
+                        .focused($inputFocused)
+                        .onSubmit { Task { await search() } }
+                    if !input.isEmpty {
+                        Button {
+                            input = ""; result = nil; error = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
-            }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(Color(.secondarySystemBackground),
-                        in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground),
+                            in: RoundedRectangle(cornerRadius: 10))
 
-            Button {
-                Task { await search() }
-            } label: {
-                if searching {
-                    ProgressView().frame(width: 22, height: 22)
-                } else {
-                    Text("Search").fontWeight(.semibold)
+                Button {
+                    Task { await search() }
+                } label: {
+                    if searching {
+                        ProgressView().frame(width: 22, height: 22)
+                    } else {
+                        Text("Search").fontWeight(.semibold)
+                    }
                 }
+                .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || searching)
             }
-            .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || searching)
+            // Letter-prefix chips sit immediately under the search bar so
+            // they're always next to where the user is typing, not stranded
+            // at the bottom of the screen above the keyboard.
+            HStack(spacing: 8) {
+                prefixChip("F")
+                prefixChip("M")
+                prefixChip("N")
+                Spacer()
+            }
         }
+    }
+
+    private func prefixChip(_ letter: String) -> some View {
+        let isActive = input.uppercased().hasPrefix(letter)
+        return Button { setPrefix(letter) } label: {
+            Text(letter)
+                .font(.subheadline.weight(.semibold))
+                .frame(minWidth: 32)
+                .padding(.vertical, 4)
+        }
+        .buttonStyle(.bordered)
+        .tint(isActive ? .accentColor : .secondary)
     }
 
     @ViewBuilder
@@ -198,6 +235,71 @@ struct RouteLookupView: View {
     // MARK: School routes
 
     /// School routes lives behind a disclosure so the Route sheet opens
+    // MARK: Train lines
+
+    /// SEQ rail lines as recognisable by users — by line name with brand
+    /// colour, not the GTFS internal codes (BRBN, CLBR, …). Tapping a line
+    /// opens RouteStopsView with the canonical outbound (Brisbane → terminus)
+    /// short_name so the rider sees stops in the typical direction first.
+    private struct TrainLineEntry: Identifiable {
+        let id: String         // canonical route_short_name we drill into
+        let name: String       // user-facing line name
+        let hex: String        // brand colour
+    }
+
+    private static let trainLines: [TrainLineEntry] = [
+        .init(id: "BRBN", name: "Beenleigh line",            hex: "E31837"),
+        .init(id: "BRFG", name: "Ferny Grove line",          hex: "E31837"),
+        .init(id: "BRCA", name: "Caboolture line",           hex: "008752"),
+        .init(id: "BRIP", name: "Ipswich line",              hex: "008752"),
+        .init(id: "BRGY", name: "Sunshine Coast line",       hex: "008752"),
+        .init(id: "BRRP", name: "Redcliffe Peninsula line",  hex: "1578BE"),
+        .init(id: "BRSP", name: "Springfield line",          hex: "1578BE"),
+        .init(id: "BRCL", name: "Cleveland line",            hex: "00467F"),
+        .init(id: "BRSH", name: "Shorncliffe line",          hex: "00447C"),
+        .init(id: "BRBD", name: "Airport line",              hex: "FFC425"),
+        .init(id: "BRVL", name: "Gold Coast line",           hex: "FFC425"),
+        .init(id: "BRDB", name: "Doomben line",              hex: "A54399"),
+    ]
+
+    @ViewBuilder
+    private var trainLinesSection: some View {
+        DisclosureGroup(isExpanded: $trainLinesExpanded) {
+            VStack(spacing: 6) {
+                ForEach(Self.trainLines) { line in
+                    Button {
+                        routeStopsRequest = RouteStopsRequest(shortName: line.id)
+                    } label: {
+                        HStack(spacing: 12) {
+                            // Brand colour stripe — a vertical pill on the
+                            // leading edge, like the line bar on a transit
+                            // platform sign.
+                            Capsule()
+                                .fill(Color(gtfsHex: line.hex) ?? .gray)
+                                .frame(width: 6, height: 22)
+                            Text(line.name)
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 10).padding(.horizontal, 12)
+                        .background(Color(.secondarySystemBackground),
+                                    in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "tram.fill").foregroundStyle(.indigo)
+                Text("Train lines").font(.headline)
+            }
+        }
+    }
+
     /// focused on the route-number search. Persists expanded/collapsed
     /// state so a user who wants school routes daily doesn't have to
     /// re-tap every time.
@@ -309,6 +411,14 @@ struct RouteLookupView: View {
     }
 
     // MARK: Helpers
+
+    /// Replaces the input's letter prefix with the given letter, preserving
+    /// any digits the user already typed. So "411" + tap M → "M411",
+    /// and "M2" + tap F → "F2".
+    private func setPrefix(_ letter: String) {
+        let digits = input.filter { $0.isNumber }
+        input = letter + digits
+    }
 
     /// Formats the next-service timestamp relative to "now":
     ///   - Today  → "08:13 (in 23 min)" or "08:13"
