@@ -58,9 +58,11 @@ struct RouteLookupView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: "xmark.circle.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
                     .accessibilityLabel("Close")
                 }
                 // System .numberPad has no Return key, so without this the
@@ -80,7 +82,6 @@ struct RouteLookupView: View {
                     .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || searching)
                 }
             }
-            .onAppear { inputFocused = true }
             .sheet(item: $routeStopsRequest) { req in
                 RouteStopsView(shortName: req.shortName, selectedHeadsign: req.headsign)
             }
@@ -258,9 +259,16 @@ struct RouteLookupView: View {
     /// opens RouteStopsView with the canonical outbound (Brisbane → terminus)
     /// short_name so the rider sees stops in the typical direction first.
     private struct TrainLineEntry: Identifiable {
-        let id: String         // canonical route_short_name we drill into
-        let name: String       // user-facing line name
-        let hex: String        // brand colour
+        let id: String          // canonical route_short_name we drill into
+        let name: String        // user-facing line name
+        let hex: String         // brand colour
+        /// Forwarded as the request's headsign so RouteStopsView's header
+        /// pill shows the destination (e.g. "Airport"/"Gold Coast") rather
+        /// than falling back to route_long_name parsing — needed for
+        /// VLBD/BDVL where both termini share the same brand colour and the
+        /// colour-based disambiguation in `trainLine()` would pick the
+        /// wrong one. nil for single-terminus lines, where it's unambiguous.
+        var headsign: String? = nil
     }
 
     private static let trainLines: [TrainLineEntry] = [
@@ -273,9 +281,20 @@ struct RouteLookupView: View {
         .init(id: "BRSP", name: "Springfield line",          hex: "1578BE"),
         .init(id: "BRCL", name: "Cleveland line",            hex: "00467F"),
         .init(id: "BRSH", name: "Shorncliffe line",          hex: "00447C"),
-        .init(id: "BRBD", name: "Airport line",              hex: "FFC425"),
-        .init(id: "BRVL", name: "Gold Coast line",           hex: "FFC425"),
+        // VLBD/BDVL are the full Varsity Lakes ↔ Domestic Airport
+        // through-services (291/321 trips) — not BRBD/BRVL, which are
+        // short-working trips that start/end partway around the City Loop
+        // (Boggo Road / Bowen Hills) instead of running the full line.
+        .init(id: "VLBD", name: "Airport line",              hex: "FFC425",
+              headsign: "Domestic Airport station"),
+        .init(id: "BDVL", name: "Gold Coast line",           hex: "FFC425",
+              headsign: "Varsity Lakes station"),
         .init(id: "BRDB", name: "Doomben line",              hex: "A54399"),
+        // The City Loop itself, both directions — RouteStopsView already
+        // groups by (direction_id, headsign), so this single entry surfaces
+        // "Towards Boggo Road" / "Towards Roma Street" / "Towards Bowen
+        // Hills" as separate sections.
+        .init(id: "BRBR", name: "City Loop",                 hex: "006D77"),
     ]
 
     @ViewBuilder
@@ -284,7 +303,7 @@ struct RouteLookupView: View {
             VStack(spacing: 6) {
                 ForEach(Self.trainLines) { line in
                     Button {
-                        routeStopsRequest = RouteStopsRequest(shortName: line.id)
+                        routeStopsRequest = RouteStopsRequest(shortName: line.id, headsign: line.headsign)
                     } label: {
                         HStack(spacing: 12) {
                             // Brand colour stripe — a vertical pill on the

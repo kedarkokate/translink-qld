@@ -150,9 +150,14 @@ struct RouteStopsView: View {
 
     private func tintForRoute(_ r: RouteStopsResponse) -> Color {
         if r.routeType == RouteType.rail.rawValue || r.routeType == RouteType.subway.rawValue {
+            let line = trainLine(longName: r.routeLongName, routeColor: r.routeColor)
+            // The City Loop's GTFS route_color (A0A0A0, a flat "no brand"
+            // grey) is overridden by our own colour so the pill stands out.
+            if line?.pillName == "City Loop", let c = Color(gtfsHex: line?.hex) {
+                return c
+            }
             if let c = Color(gtfsHex: r.routeColor) { return c }
-            if let line = trainLine(longName: r.routeLongName, routeColor: r.routeColor),
-               let c = Color(gtfsHex: line.hex) { return c }
+            if let c = Color(gtfsHex: line?.hex) { return c }
         }
         return routeColor(r.routeType)
     }
@@ -231,7 +236,7 @@ struct RouteStopsView: View {
         switch RouteType(rawValue: rt) {
         case .bus: return .blue
         case .rail, .subway: return .indigo
-        case .ferry: return .cyan
+        case .ferry: return NearbyStop.ferryTint
         case .tram: return .pink
         default: return .gray
         }

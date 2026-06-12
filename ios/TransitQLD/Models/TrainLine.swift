@@ -51,6 +51,13 @@ private let lineByTerminus: [String: TrainLine] = [
     "Doomben":             TrainLine(name: "Doomben",             pillName: "Doomben",     hex: "A54399"),
 ]
 
+/// The City Loop service (route_short_name "BRBR") circles Bowen Hills →
+/// Fortitude Valley → Central → Roma Street → South Brisbane → South Bank →
+/// Boggo Road (and the reverse). TransLink's GTFS gives it route_color
+/// A0A0A0 — a flat "no brand" grey — so we give it its own distinct colour
+/// here rather than show a washed-out pill.
+private let cityLoopLine = TrainLine(name: "City Loop", pillName: "City Loop", hex: "006D77")
+
 /// Parse a GTFS `route_long_name` of the form "Origin - Destination" and pick
 /// the outer terminus that names the line. When both ends are non–Brisbane
 /// City (through-routes like "Ipswich - Redcliffe Peninsula"), the route's
@@ -59,6 +66,9 @@ func trainLine(longName: String?, routeColor: String?) -> TrainLine? {
     guard let longName else { return nil }
     let parts = longName.components(separatedBy: " - ").map {
         $0.trimmingCharacters(in: .whitespaces)
+    }
+    if parts.count == 2, parts[0] == "Brisbane City", parts[1] == "Brisbane City" {
+        return cityLoopLine
     }
     let endpoints = parts.compactMap { lineByTerminus[$0] }
 
