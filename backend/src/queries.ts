@@ -36,9 +36,32 @@ export async function findNearbyStops(
     ? await consolidateRailStations(env, withDistance)
     : withDistance;
 
-  return collapsed
-    .sort((a, b) => a.distance_m - b.distance_m)
-    .slice(0, limit);
+  const ranked = collapsed.sort((a, b) => a.distance_m - b.distance_m);
+  if (!consolidate) return ranked.slice(0, limit);
+
+  // Per-mode floor: in dense bus-stop areas (e.g. Brisbane CBD) a strict
+  // limit-by-distance crowds out the sparser rail / ferry pins, making them
+  // flicker in and out of the map as the user pans. Always include up to N
+  // of the nearest rail and ferry stops in the response, even if they'd
+  // otherwise rank below `limit`. The journey-planner callers pass
+  // consolidate=false and skip this; they need pure k-nearest behaviour.
+  const headline = ranked.slice(0, limit);
+  const headlineIds = new Set(headline.map(s => s.stop_id));
+  const hasMode = (s: StopWithDistance, types: string[]) => {
+    const list = (s.route_types ?? "").split(",");
+    return types.some(t => list.includes(t));
+  };
+  const RAIL_FLOOR = 12;
+  const FERRY_FLOOR = 8;
+  const railExtras = ranked
+    .filter(s => !headlineIds.has(s.stop_id) && hasMode(s, ["1", "2"]))
+    .slice(0, RAIL_FLOOR);
+  for (const s of railExtras) headlineIds.add(s.stop_id);
+  const ferryExtras = ranked
+    .filter(s => !headlineIds.has(s.stop_id) && hasMode(s, ["4"]))
+    .slice(0, FERRY_FLOOR);
+  return [...headline, ...railExtras, ...ferryExtras]
+    .sort((a, b) => a.distance_m - b.distance_m);
 }
 
 /// Returns either [stopId] for a regular stop, or every child platform id
@@ -747,48 +770,52 @@ export async function planJourney(
   if (fromStops.length === 0 || toStops.length === 0) return [];
 
   const now = new Date();
-  const dateStr = brisbaneDateISO(now).replaceAll("-", "");
-  const dowCol = dayOfWeekColumn(dateStr);
-
-  // Brisbane-local HH:MM:SS for "now" and "now + window", used to push the
-  // time-window filter down into SQL. GTFS times can exceed 24:00:00 for
-  // late-night trips so the upper bound is allowed to exceed 23:59:59.
-  const nowLocal = brisbaneClock(now);
-  const upper = clockPlusMinutes(nowLocal, windowMinutes);
-
   const boardLiteral = fromStops.map(s => `'${s.stop_id.replace(/'/g, "''")}'`).join(",");
   const alightLiteral = toStops.map(s => `'${s.stop_id.replace(/'/g, "''")}'`).join(",");
 
-  // Service-id filter is pushed into a subquery so we don't burn placeholders
-  // on the dozens of services active each day. v1 uses calendar only (no
-  // calendar_dates exceptions).
-  const sql = `
-    SELECT
-      sa.trip_id,
-      sa.stop_id AS board_stop, sa.departure_time AS board_time,
-      sb.stop_id AS alight_stop, sb.arrival_time AS alight_time,
-      t.route_id, t.trip_headsign,
-      r.route_short_name, r.route_long_name, r.route_type,
-      r.route_color, r.route_text_color
-    FROM stop_times sa
-    JOIN stop_times sb
-      ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
-    JOIN trips t ON t.trip_id = sa.trip_id
-    JOIN routes r ON r.route_id = t.route_id
-    WHERE sa.stop_id IN (${boardLiteral})
-      AND sb.stop_id IN (${alightLiteral})
-      AND t.service_id IN (
-        SELECT service_id FROM calendar
-        WHERE start_date <= ?1 AND end_date >= ?1 AND ${dowCol} = 1
-      )
-      AND sa.departure_time BETWEEN ?2 AND ?3
-      AND sa.pickup_type != 1
-      AND sb.drop_off_type != 1
-    ORDER BY sa.departure_time
-    LIMIT 400
-  `;
-  const { results } = await env.DB.prepare(sql).bind(dateStr, nowLocal, upper).all<CandidateRow>();
-  if (!results || results.length === 0) {
+  // Fan out across yesterday/today/tomorrow anchor days so cross-midnight
+  // queries pick up trips anchored to the *previous* GTFS service day
+  // (departure_time ≥ 24:00:00) and trips on the *next* service day when
+  // the window crosses midnight forward.
+  const anchors = computeAnchorWindows(now, windowMinutes);
+  const anchored = await Promise.all(anchors.map(a => {
+    const dowCol = dayOfWeekColumn(a.dateStr);
+    // Service-id filter is pushed into a subquery so we don't burn placeholders
+    // on the dozens of services active each day. v1 uses calendar only (no
+    // calendar_dates exceptions).
+    const sql = `
+      SELECT
+        sa.trip_id,
+        sa.stop_id AS board_stop, sa.departure_time AS board_time,
+        sb.stop_id AS alight_stop, sb.arrival_time AS alight_time,
+        t.route_id, t.trip_headsign,
+        r.route_short_name, r.route_long_name, r.route_type,
+        r.route_color, r.route_text_color
+      FROM stop_times sa
+      JOIN stop_times sb
+        ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
+      JOIN trips t ON t.trip_id = sa.trip_id
+      JOIN routes r ON r.route_id = t.route_id
+      WHERE sa.stop_id IN (${boardLiteral})
+        AND sb.stop_id IN (${alightLiteral})
+        AND t.service_id IN (
+          SELECT service_id FROM calendar
+          WHERE start_date <= ?1 AND end_date >= ?1 AND ${dowCol} = 1
+        )
+        AND sa.departure_time BETWEEN ?2 AND ?3
+        AND sa.pickup_type != 1
+        AND sb.drop_off_type != 1
+      ORDER BY sa.departure_time
+      LIMIT 400
+    `;
+    return env.DB.prepare(sql)
+      .bind(a.dateStr, a.lowerClock, a.upperClock)
+      .all<CandidateRow>()
+      .then(res => ({ baseDate: a.baseDate, rows: res.results ?? [] }));
+  }));
+
+  const totalRows = anchored.reduce((n, g) => n + g.rows.length, 0);
+  if (totalRows === 0) {
     // No direct trips found. Don't return early when transfers are enabled —
     // a journey via a hub may still exist (e.g. Indooroopilly → Carindale,
     // where no single bus connects but bus → CBD hub → bus does).
@@ -808,9 +835,10 @@ export async function planJourney(
   const toMap   = new Map(toStops.map(s => [s.stop_id, s]));
 
   const candidates: JourneyOption[] = [];
-  for (const r of results) {
-    const boardMs = applyGtfsTime(now, r.board_time);
-    const alightMs = applyGtfsTime(now, r.alight_time);
+  for (const { baseDate, rows } of anchored) {
+  for (const r of rows) {
+    const boardMs = applyGtfsTime(baseDate, r.board_time);
+    const alightMs = applyGtfsTime(baseDate, r.alight_time);
     if (boardMs < nowMs - 60_000) continue;            // already gone
     if (boardMs > nowMs + windowMs) continue;          // beyond window
     if (alightMs <= boardMs) continue;                 // sanity guard
@@ -868,6 +896,7 @@ export async function planJourney(
       is_realtime: tu != null,
       delay_seconds: delaySec,
     });
+  }
   }
 
   // Dedupe by (route + headsign): show one "Catch route X to direction Y"
@@ -986,17 +1015,16 @@ async function planTransferJourneys(
     .join(",");
 
   const now = new Date();
-  const dateStr = brisbaneDateISO(now).replaceAll("-", "");
-  const dowCol = dayOfWeekColumn(dateStr);
-  const nowLocal = brisbaneClock(now);
-  const upper = clockPlusMinutes(nowLocal, windowMinutes);
-  const upperLeg2 = clockPlusMinutes(nowLocal, windowMinutes + 30);
-
   const boardLiteral = fromStops.map(s => `'${s.stop_id.replace(/'/g, "''")}'`).join(",");
   const alightLiteral = toStops.map(s => `'${s.stop_id.replace(/'/g, "''")}'`).join(",");
 
-  // ---- Leg 1: any fromStop → any hub platform ----
-  const leg1Sql = `
+  // Same cross-midnight handling as planJourney: fan out across whichever of
+  // yesterday/today/tomorrow are needed. Leg 2 gets a slightly wider window
+  // (+30 min) to allow for transfer wait at the hub.
+  const leg1Anchors = computeAnchorWindows(now, windowMinutes);
+  const leg2Anchors = computeAnchorWindows(now, windowMinutes + 30);
+
+  const buildLegSql = (fromIn: string, toIn: string, dowCol: string) => `
     SELECT sa.trip_id,
       sa.stop_id AS board_stop, sa.departure_time AS board_time,
       sb.stop_id AS alight_stop, sb.arrival_time AS alight_time,
@@ -1007,8 +1035,8 @@ async function planTransferJourneys(
     JOIN stop_times sb ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
     JOIN trips t ON t.trip_id = sa.trip_id
     JOIN routes r ON r.route_id = t.route_id
-    WHERE sa.stop_id IN (${boardLiteral})
-      AND sb.stop_id IN (${hubStopLiteral})
+    WHERE sa.stop_id IN (${fromIn})
+      AND sb.stop_id IN (${toIn})
       AND t.service_id IN (
         SELECT service_id FROM calendar
         WHERE start_date <= ?1 AND end_date >= ?1 AND ${dowCol} = 1
@@ -1018,47 +1046,42 @@ async function planTransferJourneys(
     ORDER BY sa.departure_time
     LIMIT 600
   `;
-  const { results: leg1Rows = [] } = await env.DB.prepare(leg1Sql)
-    .bind(dateStr, nowLocal, upper)
-    .all<TransferLegRow>();
+
+  type AnchoredLegRows = { baseDate: Date; rows: TransferLegRow[] };
+
+  // ---- Leg 1: any fromStop → any hub platform ----
+  const leg1Anchored: AnchoredLegRows[] = await Promise.all(leg1Anchors.map(a =>
+    env.DB.prepare(buildLegSql(boardLiteral, hubStopLiteral, dayOfWeekColumn(a.dateStr)))
+      .bind(a.dateStr, a.lowerClock, a.upperClock)
+      .all<TransferLegRow>()
+      .then(res => ({ baseDate: a.baseDate, rows: res.results ?? [] }))
+  ));
 
   // ---- Leg 2: any hub platform → any toStop ----
-  const leg2Sql = `
-    SELECT sa.trip_id,
-      sa.stop_id AS board_stop, sa.departure_time AS board_time,
-      sb.stop_id AS alight_stop, sb.arrival_time AS alight_time,
-      t.route_id, t.trip_headsign,
-      r.route_short_name, r.route_long_name, r.route_type,
-      r.route_color, r.route_text_color
-    FROM stop_times sa
-    JOIN stop_times sb ON sb.trip_id = sa.trip_id AND sb.stop_sequence > sa.stop_sequence
-    JOIN trips t ON t.trip_id = sa.trip_id
-    JOIN routes r ON r.route_id = t.route_id
-    WHERE sa.stop_id IN (${hubStopLiteral})
-      AND sb.stop_id IN (${alightLiteral})
-      AND t.service_id IN (
-        SELECT service_id FROM calendar
-        WHERE start_date <= ?1 AND end_date >= ?1 AND ${dowCol} = 1
-      )
-      AND sa.departure_time BETWEEN ?2 AND ?3
-      AND sa.pickup_type != 1 AND sb.drop_off_type != 1
-    ORDER BY sa.departure_time
-    LIMIT 600
-  `;
-  const { results: leg2Rows = [] } = await env.DB.prepare(leg2Sql)
-    .bind(dateStr, nowLocal, upperLeg2)
-    .all<TransferLegRow>();
+  const leg2Anchored: AnchoredLegRows[] = await Promise.all(leg2Anchors.map(a =>
+    env.DB.prepare(buildLegSql(hubStopLiteral, alightLiteral, dayOfWeekColumn(a.dateStr)))
+      .bind(a.dateStr, a.lowerClock, a.upperClock)
+      .all<TransferLegRow>()
+      .then(res => ({ baseDate: a.baseDate, rows: res.results ?? [] }))
+  ));
 
-  if (!leg1Rows.length || !leg2Rows.length) return [];
+  const leg1Total = leg1Anchored.reduce((n, g) => n + g.rows.length, 0);
+  const leg2Total = leg2Anchored.reduce((n, g) => n + g.rows.length, 0);
+  if (!leg1Total || !leg2Total) return [];
 
-  // Index leg2 by hub parent_station for fast pairing
-  const leg2ByHub = new Map<string, TransferLegRow[]>();
-  for (const r of leg2Rows) {
-    const hub = hubByStop.get(r.board_stop);
-    if (!hub) continue;
-    const list = leg2ByHub.get(hub.parent_station) ?? [];
-    list.push(r);
-    leg2ByHub.set(hub.parent_station, list);
+  // Index leg2 by hub parent_station for fast pairing. Each entry carries
+  // the row plus the GTFS service-day baseDate so the join below uses the
+  // correct anchor when converting `departure_time` to a real timestamp.
+  type Leg2Entry = { row: TransferLegRow; baseDate: Date };
+  const leg2ByHub = new Map<string, Leg2Entry[]>();
+  for (const { baseDate, rows } of leg2Anchored) {
+    for (const r of rows) {
+      const hub = hubByStop.get(r.board_stop);
+      if (!hub) continue;
+      const list = leg2ByHub.get(hub.parent_station) ?? [];
+      list.push({ row: r, baseDate });
+      leg2ByHub.set(hub.parent_station, list);
+    }
   }
 
   const tripUpdates = await getTripUpdates(env).catch(() => new Map());
@@ -1068,14 +1091,15 @@ async function planTransferJourneys(
 
   const candidates: JourneyOption[] = [];
 
+  for (const { baseDate: leg1Base, rows: leg1Rows } of leg1Anchored) {
   for (const a of leg1Rows) {
     const aHub = hubByStop.get(a.alight_stop);
     if (!aHub) continue;
     const leg1Board = fromMap.get(a.board_stop);
     if (!leg1Board) continue;
 
-    const leg1BoardMs = applyGtfsTime(now, a.board_time);
-    const leg1AlightMs = applyGtfsTime(now, a.alight_time);
+    const leg1BoardMs = applyGtfsTime(leg1Base, a.board_time);
+    const leg1AlightMs = applyGtfsTime(leg1Base, a.alight_time);
     if (leg1BoardMs < nowMs - 60_000) continue;
     if (leg1AlightMs <= leg1BoardMs) continue;
 
@@ -1093,12 +1117,12 @@ async function planTransferJourneys(
     const predLeg1AlightMs = delaySec != null ? leg1AlightMs + delaySec * 1000 : leg1AlightMs;
 
     const leg2List = leg2ByHub.get(aHub.parent_station) ?? [];
-    for (const b of leg2List) {
+    for (const { row: b, baseDate: leg2Base } of leg2List) {
       if (a.trip_id === b.trip_id) continue;  // same trip — not a transfer
 
       const bHub = hubByStop.get(b.board_stop)!;
-      const leg2BoardMs = applyGtfsTime(now, b.board_time);
-      const leg2AlightMs = applyGtfsTime(now, b.alight_time);
+      const leg2BoardMs = applyGtfsTime(leg2Base, b.board_time);
+      const leg2AlightMs = applyGtfsTime(leg2Base, b.alight_time);
       if (leg2AlightMs <= leg2BoardMs) continue;
 
       const transferMin = (leg2BoardMs - leg1AlightMs) / 60_000;
@@ -1180,6 +1204,7 @@ async function planTransferJourneys(
       });
     }
   }
+  }
 
   // Dedupe by (leg1 route + leg2 route) — show one "ride X, change to Y"
   // option per route-pair regardless of which specific board/alight
@@ -1228,29 +1253,29 @@ export async function getDepartures(
 
   const now = new Date();
   // GTFS times use the service day's noon as anchor — a service day extends
-  // past midnight as e.g. 25:30:00. We look up yesterday + today + tomorrow's
-  // services and filter by absolute timestamp. Tomorrow matters because the
-  // window_min can be up to 24h: when the caller asks for the "next service
-  // up to 24h out" on a day with no service at this stop (e.g. Sunday at a
-  // weekday-only bus stop), tomorrow's services are the only relevant set.
-  const today = serviceDate(now, 0);
-  const yesterday = serviceDate(now, -1);
-  const tomorrow = serviceDate(now, 1);
-  const activeToday = await activeServiceIds(env, today);
-  const activeYesterday = await activeServiceIds(env, yesterday);
-  const activeTomorrow = await activeServiceIds(env, tomorrow);
+  // past midnight as e.g. 25:30:00. We look up yesterday's services (for
+  // their post-midnight tail) plus today's and as many days ahead as the
+  // window covers, filtering by absolute timestamp. The "days ahead" matters
+  // because the window_min can be up to a week: when the caller asks for the
+  // "very next service" at a weekday-only stop checked on a Saturday, only
+  // Monday's calendar has anything to find.
+  const daysAhead = Math.max(1, Math.ceil(windowMinutes / 1440));
+  const dayOffsets = [-1, ...Array.from({ length: daysAhead + 1 }, (_, i) => i)];
+  const activeByOffset = new Map<number, Set<string>>();
+  for (const d of dayOffsets) {
+    activeByOffset.set(d, await activeServiceIds(env, serviceDate(now, d)));
+  }
 
   const horizonMs = windowMinutes * 60 * 1000;
   const nowMs = now.getTime();
 
-  const rows = await fetchScheduledRows(
-    env, stopIds,
-    [...activeToday, ...activeYesterday, ...activeTomorrow],
-  );
+  const allServiceIds = new Set<string>();
+  for (const set of activeByOffset.values()) {
+    for (const id of set) allServiceIds.add(id);
+  }
+  const rows = await fetchScheduledRows(env, stopIds, [...allServiceIds]);
 
   const tripUpdates = await getTripUpdates(env).catch(() => new Map());
-  const yesterdayDate = offsetDate(now, -1);
-  const tomorrowDate = offsetDate(now, 1);
 
   const out: Departure[] = [];
   const consider = (r: ScheduledRow, scheduledMs: number) => {
@@ -1284,20 +1309,16 @@ export async function getDepartures(
   };
 
   for (const r of rows) {
-    // A service_id can be active on consecutive days, so each row may fire on
-    // today (anchored at today's midnight), as the tail of yesterday's
-    // service day (only when departure_time >= 24:00:00), and/or as
-    // tomorrow's service when the window peeks past midnight. The `consider`
-    // function filters out anything beyond `now + windowMs`, so loading all
-    // three is safe even for short windows.
-    if (activeToday.has(r.service_id)) {
-      consider(r, applyGtfsTime(now, r.departure_time));
-    }
-    if (activeYesterday.has(r.service_id) && r.departure_time >= "24:00:00") {
-      consider(r, applyGtfsTime(yesterdayDate, r.departure_time));
-    }
-    if (activeTomorrow.has(r.service_id)) {
-      consider(r, applyGtfsTime(tomorrowDate, r.departure_time));
+    // A service_id can be active on consecutive days, so each row may fire
+    // once per day offset it's active on: as that day's own service
+    // (anchored at that day's midnight), or — for yesterday only — as the
+    // tail of yesterday's service day (only when departure_time >= 24:00:00).
+    // The `consider` function filters out anything beyond `now + windowMs`,
+    // so loading every offset is safe even for short windows.
+    for (const d of dayOffsets) {
+      if (!activeByOffset.get(d)!.has(r.service_id)) continue;
+      if (d === -1 && r.departure_time < "24:00:00") continue;
+      consider(r, applyGtfsTime(offsetDate(now, d), r.departure_time));
     }
   }
 
@@ -1394,12 +1415,79 @@ function brisbaneClock(d: Date): string {
 // Adds N minutes to an "HH:MM:SS" string and may overflow past 24:00:00 to
 // match GTFS's late-night convention (e.g. "25:30:00").
 function clockPlusMinutes(hms: string, minutes: number): string {
+  return secondsToClock(clockToSeconds(hms) + minutes * 60);
+}
+
+function clockToSeconds(hms: string): number {
   const [h, m, s] = hms.split(":").map(Number);
-  const totalSec = h * 3600 + m * 60 + s + minutes * 60;
-  const hh = Math.floor(totalSec / 3600);
-  const mm = Math.floor((totalSec % 3600) / 60);
-  const ss = totalSec % 60;
+  return h * 3600 + m * 60 + s;
+}
+
+function secondsToClock(totalSec: number): string {
+  const safe = Math.max(0, totalSec);
+  const hh = Math.floor(safe / 3600);
+  const mm = Math.floor((safe % 3600) / 60);
+  const ss = safe % 60;
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+/// One anchor day's clock window for a planner SQL query. `baseDate` is the
+/// JS Date whose Brisbane-local calendar date defines the GTFS service day
+/// the row's `departure_time` should be applied to via `applyGtfsTime`.
+export interface AnchorWindow {
+  dateStr: string;
+  baseDate: Date;
+  lowerClock: string;
+  upperClock: string;
+}
+
+/// Produce the 1–3 anchor windows the planner needs to find every trip that
+/// could actually depart in real-time `[now, now + windowMinutes]`.
+///
+/// GTFS anchors each trip to a service day starting at noon-12h before the
+/// first stop_time. A trip whose `departure_time = 25:30:00` runs at 01:30
+/// the *following* calendar day. So at 00:30 Brisbane, the next-half-hour
+/// query must look at yesterday's calendar (for trips with 24:00:00+ times)
+/// AND today's. When the window crosses midnight forward (e.g. 23:30 + 60
+/// min), it must also look at tomorrow's calendar (for trips with 00:00:00+
+/// times). Outside these edges only today's anchor matters — most queries
+/// return a single window with no extra SQL cost.
+export function computeAnchorWindows(now: Date, windowMinutes: number): AnchorWindow[] {
+  const todayStr = brisbaneDateISO(now).replaceAll("-", "");
+  const nowLocal = brisbaneClock(now);
+  const upper = clockPlusMinutes(nowLocal, windowMinutes);
+  const nowSec = clockToSeconds(nowLocal);
+  const upperSec = clockToSeconds(upper);
+
+  const out: AnchorWindow[] = [
+    { dateStr: todayStr, baseDate: now, lowerClock: nowLocal, upperClock: upper },
+  ];
+
+  // Yesterday: when the current real time still falls within the tail of
+  // yesterday's GTFS service day (departure_times 24:00:00–~30:00:00).
+  // Brisbane NightLink trips occasionally push toward 30:00:00, so allow
+  // a generous cap.
+  const yLowerSec = nowSec + 24 * 3600;
+  if (yLowerSec < 30 * 3600) {
+    out.push({
+      dateStr: serviceDate(now, -1),
+      baseDate: offsetDate(now, -1),
+      lowerClock: secondsToClock(yLowerSec),
+      upperClock: secondsToClock(Math.min(upperSec + 24 * 3600, 30 * 3600 - 1)),
+    });
+  }
+
+  // Tomorrow: when the query window extends past midnight forward.
+  if (upperSec > 24 * 3600) {
+    out.push({
+      dateStr: serviceDate(now, 1),
+      baseDate: offsetDate(now, 1),
+      lowerClock: secondsToClock(Math.max(0, nowSec - 24 * 3600)),
+      upperClock: secondsToClock(upperSec - 24 * 3600),
+    });
+  }
+
+  return out;
 }
 
 // UTC ms for "midnight Brisbane on the Brisbane-local calendar date of baseDate",
