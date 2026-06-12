@@ -60,7 +60,8 @@ struct DirectionsView: View {
                     Spacer()
                 }
             }
-            .padding(.vertical, 12)
+            .padding(.top, 6)
+            .padding(.bottom, 12)
             .navigationTitle("Directions")
             .navigationBarTitleDisplayMode(.inline)
             // Explicit visible background so the Close button sits on an
@@ -70,9 +71,11 @@ struct DirectionsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: "xmark.circle.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
                     .accessibilityLabel("Close")
                 }
             }
@@ -231,17 +234,21 @@ struct DirectionsView: View {
             HStack(spacing: 10) {
                 routeBadge(option.route, headsign: option.headsign)
                 Text("\(option.totalMinutes) min")
-                    .font(.title3.weight(.bold))
+                    .font(.headline.weight(.bold))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 if option.isRealtime {
                     HStack(spacing: 3) {
                         Image(systemName: "dot.radiowaves.left.and.right")
                         Text("Live")
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                     .font(.caption2)
                     .foregroundStyle(.green)
                 }
-                Spacer()
+                Spacer(minLength: 4)
                 pinButton(for: option)
                 if isBest {
                     Text("Best")
@@ -249,6 +256,7 @@ struct DirectionsView: View {
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .foregroundStyle(.white)
                         .background(.green, in: Capsule())
+                        .fixedSize(horizontal: true, vertical: false)
                 }
             }
 
@@ -419,13 +427,13 @@ struct DirectionsView: View {
             }
         } label: {
             Text(routeLabel(route, headsign: headsign))
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .lineLimit(1).truncationMode(.tail).minimumScaleFactor(0.8)
-                .padding(.horizontal, 10).padding(.vertical, 5)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .lineLimit(1).truncationMode(.tail).minimumScaleFactor(0.7)
+                .padding(.horizontal, 12).padding(.vertical, 7)
                 .foregroundStyle(routeForeground(route))
                 .background(routeTint(route, headsign: headsign),
-                            in: RoundedRectangle(cornerRadius: 8))
-                .frame(minWidth: 48)
+                            in: RoundedRectangle(cornerRadius: 9))
+                .frame(minWidth: 56, maxWidth: 140, alignment: .leading)
         }
         .buttonStyle(.plain)
         .disabled(route.routeShortName?.isEmpty ?? true)
@@ -474,7 +482,7 @@ struct DirectionsView: View {
         switch RouteType(rawValue: rt) {
         case .bus: return .blue
         case .rail, .subway: return .indigo
-        case .ferry: return .cyan
+        case .ferry: return NearbyStop.ferryTint
         case .tram: return .pink
         default: return .gray
         }

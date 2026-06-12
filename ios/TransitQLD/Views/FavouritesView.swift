@@ -28,9 +28,11 @@ struct FavouritesView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: "xmark.circle.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
                     .accessibilityLabel("Close")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -325,12 +327,25 @@ struct FavouritesView: View {
         svc: FavouriteService, in deps: [Departure], limit: Int,
     ) -> [Departure] {
         let now = Date()
+        let isTrain = (svc.routeType == RouteType.rail.rawValue
+                       || svc.routeType == RouteType.subway.rawValue)
         return deps
             .filter { d in
                 guard !d.isCancelled,
                       d.effectiveDeparture > now,
-                      (d.routeShortName ?? "") == svc.routeShortName,
                       (d.headsign ?? "") == (svc.headsign ?? "") else { return false }
+                // Brisbane train route_short_names are directional (e.g. an
+                // outbound Springfield service is "RPSP" coming through-routed
+                // from Redcliffe Peninsula, not the legacy "BRSP"). Matching
+                // by route_color groups all directional variants of one line.
+                // Buses/ferries have stable short_names — keep the strict match.
+                if isTrain {
+                    if (d.routeColor ?? "") != (svc.routeColor ?? "") {
+                        return false
+                    }
+                } else if (d.routeShortName ?? "") != svc.routeShortName {
+                    return false
+                }
                 // Time-specific favourite filters to the matching scheduled
                 // time-of-day; route-at-stop favourite (time=nil) accepts any
                 // upcoming run of this (route, direction).
@@ -423,7 +438,7 @@ struct FavouritesView: View {
         switch RouteType(rawValue: rt) {
         case .bus: return .blue
         case .rail, .subway: return .indigo
-        case .ferry: return .cyan
+        case .ferry: return NearbyStop.ferryTint
         case .tram: return .pink
         default: return .gray
         }

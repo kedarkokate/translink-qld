@@ -104,7 +104,19 @@ struct StopDetailView: View {
             .filter { !$0.isCancelled }
             .sorted { $0.effectiveDeparture < $1.effectiveDeparture }
         for dep in sorted {
-            let key = "\(dep.routeId)|\(dep.headsign ?? "")"
+            // Trains: group by (route_color, headsign) so a through-routed
+            // line never splits into two rows. The Brisbane network often has
+            // multiple route_ids for what users see as one line+direction
+            // (e.g. "Springfield Central" comes through-routed as RPSP from
+            // Redcliffe Peninsula and, more rarely, as BRSP from Brisbane).
+            // Buses/ferries keep grouping by route_id since their short_names
+            // are stable per route.
+            let isTrain = (dep.routeType == RouteType.rail.rawValue
+                           || dep.routeType == RouteType.subway.rawValue)
+            let routeKey = isTrain
+                ? "color:\(dep.routeColor ?? "")"
+                : "id:\(dep.routeId)"
+            let key = "\(routeKey)|\(dep.headsign ?? "")"
             if byKey[key] == nil {
                 byKey[key] = DepartureGroup(
                     key: key, badge: dep.routeBadge,
@@ -269,7 +281,7 @@ struct StopDetailView: View {
                 columns: [GridItem(.adaptive(minimum: 56, maximum: 90), spacing: 8)],
                 alignment: .leading, spacing: 8,
             ) {
-                ForEach(routes) { route in
+                ForEach(dedupedRoutes(routes)) { route in
                     routeBadge(text: route.displayName, type: route.routeType,
                                prominent: false, shortName: route.routeShortName,
                                routeColor: route.routeColor,
@@ -279,6 +291,35 @@ struct StopDetailView: View {
                 }
             }
         }
+    }
+
+    /// Brisbane's train network has multiple route_ids per visible line —
+    /// one per direction × through-routed combination (BRBN/BNBR/FGBR/BRFG
+    /// all map to the "red family"; RPSP/SPRP/BRSP all map to Springfield).
+    /// Collapse them to one pill per line, keyed by the user-facing pill
+    /// label so the grid mirrors what TransLink itself publishes.
+    private func dedupedRoutes(_ routes: [Route]) -> [Route] {
+        var seen = Set<String>()
+        var result: [Route] = []
+        for r in routes {
+            let isTrain = (r.routeType == RouteType.rail.rawValue
+                           || r.routeType == RouteType.subway.rawValue)
+            let key: String
+            if isTrain {
+                let pill = trainLine(longName: r.routeLongName,
+                                     routeColor: r.routeColor)?.pillName
+                    ?? r.routeLongName
+                    ?? r.routeShortName
+                    ?? r.id
+                key = "train|\(pill)"
+            } else {
+                key = "\(r.routeType)|\(r.routeShortName ?? r.id)"
+            }
+            if seen.insert(key).inserted {
+                result.append(r)
+            }
+        }
+        return result
     }
 
     // MARK: Route badge
@@ -332,7 +373,7 @@ struct StopDetailView: View {
         switch RouteType(rawValue: rt) {
         case .bus: .blue
         case .rail, .subway: .indigo
-        case .ferry: .cyan
+        case .ferry: NearbyStop.ferryTint
         case .tram: .pink
         default: .gray
         }
@@ -359,8 +400,9 @@ struct StopDetailView: View {
         }
     }
 
-    /// When the 2-hour window has nothing, peek up to 24h ahead for the very
-    /// next service so the user still sees a time/route they can rely on.
+    /// When the 2-hour window has nothing, peek up to a week ahead for the
+    /// very next service so the user still sees a time/route they can rely
+    /// on — even at weekday-only stops checked on a weekend.
     @MainActor
     private func reconcileNextServicePeek() async {
         guard departures.isEmpty else {
@@ -369,7 +411,7 @@ struct StopDetailView: View {
         }
         do {
             let next = try await TransLinkClient.shared.departures(
-                stopId: stop.stopId, limit: 1, windowMin: 1440,
+                stopId: stop.stopId, limit: 1, windowMin: 10080,
             )
             nextServicePeek = next.first
         } catch {
