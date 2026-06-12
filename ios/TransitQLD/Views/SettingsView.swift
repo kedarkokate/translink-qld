@@ -55,7 +55,7 @@ struct SettingsView: View {
                     Text("Appearance")
                         .textCase(nil)
                 } footer: {
-                    Text("System follows your iPhone setting. Choose Light or Dark to override it for TransitQLD only.")
+                    Text("System follows your iPhone setting. Choose Light or Dark to override it for Transit QLD only.")
                 }
 
                 Section {
@@ -74,8 +74,20 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    ShareLink(
+                        item: AppConfig.appStoreURL,
+                        subject: Text("Transit QLD"),
+                        message: Text("Live SEQ bus, train and ferry times — get Transit QLD on the App Store:"),
+                    ) {
+                        HStack {
+                            Text("Share Transit QLD")
+                            Spacer()
+                            Image(systemName: "square.and.arrow.up")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } header: {
-                    Text("About TransitQLD")
+                    Text("About Transit QLD")
                         .textCase(nil)
                 } footer: {
                     Text("Schedule and realtime transit data published by the Queensland Department of Transport and Main Roads under CC-BY 4.0 via TransLink Open Data. Coverage is limited to South-East Queensland — Rockhampton, Toowoomba and other regions are not in this feed.")
@@ -87,9 +99,11 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: "xmark.circle.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
                     .accessibilityLabel("Cancel")
                 }
                 ToolbarItem(placement: .topBarTrailing) {

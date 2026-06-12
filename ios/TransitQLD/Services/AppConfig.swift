@@ -10,4 +10,7 @@ enum AppConfig {
         return URL(string: "https://translink-qld.transitqld.workers.dev")!
         #endif
     }()
+
+    /// App Store listing, used by the Settings "Share" action.
+    static let appStoreURL = URL(string: "https://apps.apple.com/us/app/transitqld/id6769756778")!
 }

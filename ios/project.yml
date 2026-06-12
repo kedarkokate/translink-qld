@@ -24,7 +24,7 @@ targets:
     info:
       path: TransitQLD/Info.plist
       properties:
-        CFBundleDisplayName: TransitQLD
+        CFBundleDisplayName: Transit QLD
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen:
