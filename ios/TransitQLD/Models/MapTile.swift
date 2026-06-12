@@ -24,7 +24,7 @@ enum MapTileKind: String, Identifiable, CaseIterable, Codable {
 
     var iconName: String {
         switch self {
-        case .home: return "house.fill"
+        case .home: return "location.fill"
         case .directions: return "arrow.triangle.turn.up.right.diamond.fill"
         case .route: return "magnifyingglass"
         case .filters: return "line.3.horizontal.decrease.circle"
@@ -33,12 +33,7 @@ enum MapTileKind: String, Identifiable, CaseIterable, Codable {
     }
 
     /// When true the on-map pill renders the icon only (no text label).
-    var iconOnlyOnMap: Bool {
-        switch self {
-        case .home: return true
-        case .directions, .route, .filters, .favourites: return false
-        }
-    }
+    var iconOnlyOnMap: Bool { true }
 }
 
 enum MapTileOrder {
