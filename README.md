@@ -80,6 +80,8 @@ npm run seed:status       # row counts: remote vs source, per table
 
 The seed downloads `SEQ_GTFS.zip` (~50 MB), parses each CSV, and dispatches INSERT batches to D1 with bounded concurrency. It writes a `backend/.seed-state.json` checkpoint every 50k rows — if the run is interrupted (Ctrl-C, lost connection, laptop sleep), rerunning `npm run seed` picks up exactly where it left off. Re-wipe + restart from scratch with `npm run seed -- --restart`. On a successful seed, a SHA-256 hash of the ingested CSVs is stamped into `feed_meta` so `--if-changed` can tell whether the next reseed is actually needed — TransLink re-packages the zip (new ETag/Last-Modified) far more often than the schedule data itself changes, so a content hash is the only reliable signal.
 
+**Free-tier guard:** each run adds its D1 "Rows Written" to a running total in `feed_meta`, tracked per billing cycle (resets on the 13th, per the Cloudflare invoice — override with `D1_BILLING_CYCLE_DAY`). If that total is close enough to the 50M/month included allowance that another full reseed could push the account into paid usage, `npm run seed:if-changed` logs a warning and exits without seeding until the cycle resets. Manual `npm run seed` / `--restart` runs bypass the suspend.
+
 #### Auto-seed via GitHub Actions
 
 [.github/workflows/seed.yml](.github/workflows/seed.yml) runs `npm run seed:if-changed` Mondays and Thursdays at 20:00 UTC (06:00 Brisbane). Most runs are a quick no-op (Node install + download + hash, content unchanged); when the content hash differs the same workflow runs the full seed against D1.

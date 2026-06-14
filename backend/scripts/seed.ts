@@ -20,8 +20,21 @@
  * On a clean finish, both .seed-state.json and the extracted GTFS cache
  * under backend/.seed-cache/ are removed.
  *
+ * Free-tier guard
+ * ----------------
+ * Every run adds its D1 "Rows Written" (deletes + inserts + route_types
+ * updates) to a running total stored in feed_meta, keyed to the current
+ * billing cycle (anchored on BILLING_CYCLE_ANCHOR_DAY). `--if-changed` runs
+ * check this total first: if another full reseed could push the cycle over
+ * the 50M/month free allowance, the run logs and exits without seeding,
+ * leaving feed_content_hash untouched so the next scheduled run re-checks
+ * once the cycle resets. Manual `npm run seed` / `--restart` runs bypass the
+ * suspend (they're explicit) but still count toward the tracked total.
+ *
  * Env (backend/.env):
  *   D1_ACCOUNT_ID, D1_API_TOKEN, D1_DATABASE_ID
+ *   D1_BILLING_CYCLE_DAY  Optional override for the billing-cycle anchor day
+ *                         (default 13, per the Cloudflare invoice).
  *
  * Flags:
  *   --parallel N     In-flight HTTP requests to D1 (default 8).
@@ -57,6 +70,16 @@ const GTFS_URL = process.env.TRANSLINK_GTFS_URL
 const D1_PARAM_LIMIT = 100;         // D1 caps bound parameters at ?1..?100
 const DEFAULT_PARALLEL = 8;
 const CHECKPOINT_EVERY = 50_000;
+
+// D1's "Rows Written" billing metric: 50M/month included, then $1/million.
+const D1_FREE_ROWS_WRITTEN_PER_MONTH = 50_000_000;
+// Conservative upper bound for a full reseed's row-writes (deletes + inserts
+// across all tables + route_types updates), used so the guard below trips
+// *before* starting a reseed that would tip the account into paid usage.
+const ESTIMATED_FULL_RESEED_ROWS = 10_000_000;
+// Day-of-month the Cloudflare billing cycle resets (from the invoice: "May
+// 13 – Jun 12"). Override with D1_BILLING_CYCLE_DAY if this drifts.
+const BILLING_CYCLE_ANCHOR_DAY = Number(process.env.D1_BILLING_CYCLE_DAY ?? 13);
 
 type ColTransform = (raw: string | undefined) => unknown;
 type ColSpec = readonly [src: string, transform: ColTransform, dst?: string];
@@ -166,6 +189,58 @@ async function fetchStoredHash(d1: D1Client): Promise<string | null> {
   return rows[0]?.value ?? null;
 }
 
+/** Most recent billing-cycle start date (YYYY-MM-DD) on or before `now`. */
+function currentBillingPeriodStart(now: Date): string {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), BILLING_CYCLE_ANCHOR_DAY));
+  if (d.getTime() > now.getTime()) d.setUTCMonth(d.getUTCMonth() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** The day the *next* billing cycle starts, given the current cycle's start date. */
+function nextBillingPeriodStart(periodStart: string): string {
+  const d = new Date(`${periodStart}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+interface UsageState {
+  periodStart: string;
+  rowsWritten: number;
+}
+
+/**
+ * Self-tracked running total of D1 "Rows Written" for the current billing
+ * cycle. The seed script is the only D1 writer in this project, so this
+ * counter — reset whenever the stored period start has rolled over — is a
+ * close enough proxy for the Cloudflare-billed metric to act as a circuit
+ * breaker.
+ */
+async function loadUsage(d1: D1Client): Promise<UsageState | null> {
+  const rows = await d1.query<{ key: string; value: string }>(
+    `SELECT key, value FROM feed_meta WHERE key IN ('d1_usage_period_start', 'd1_usage_rows_written')`,
+  );
+  const map = new Map(rows.map(r => [r.key, r.value]));
+  const periodStart = map.get("d1_usage_period_start");
+  const rowsWritten = map.get("d1_usage_rows_written");
+  if (!periodStart || rowsWritten === undefined) return null;
+  return { periodStart, rowsWritten: Number(rowsWritten) };
+}
+
+async function saveUsage(d1: D1Client, usage: UsageState): Promise<void> {
+  const nowUnix = Math.floor(Date.now() / 1000);
+  for (const [key, value] of [
+    ["d1_usage_period_start", usage.periodStart],
+    ["d1_usage_rows_written", String(usage.rowsWritten)],
+  ] as const) {
+    await d1.exec(
+      `INSERT INTO feed_meta(key, value, updated_at)
+       VALUES(?1, ?2, ?3)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+      [key, value, nowUnix],
+    );
+  }
+}
+
 function loadCheckpoint(): CheckpointState | null {
   if (!existsSync(STATE_FILE)) return null;
   try { return JSON.parse(readFileSync(STATE_FILE, "utf8")) as CheckpointState; }
@@ -193,10 +268,15 @@ async function main() {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${dbId}/query`;
   const d1 = makeClient(endpoint, token);
 
+  let totalDeleted = 0;
   if (args.restart) {
     console.log("↻ --restart: clearing checkpoint, cache, and wiping all GTFS tables");
     clearCheckpoint();
-    for (const t of TABLES) await d1.exec(`DELETE FROM ${t.table}`);
+    for (const t of TABLES) {
+      const [{ c }] = await d1.query<{ c: number }>(`SELECT COUNT(*) as c FROM ${t.table}`);
+      totalDeleted += c;
+      await d1.exec(`DELETE FROM ${t.table}`);
+    }
     await d1.exec(`DELETE FROM feed_meta WHERE key='last_ingest'`);
   }
 
@@ -236,6 +316,32 @@ async function main() {
     );
   }
 
+  // Free-tier guard: track D1 "Rows Written" against the 50M/month included
+  // allowance. --if-changed runs are automated (twice-weekly cron); if the
+  // cycle's usage is already close enough that another full reseed could
+  // tip the account into paid usage, suspend until the cycle resets. Manual
+  // `npm run seed` / `--restart` runs are explicit and bypass the suspend,
+  // but still count toward the tracked total below.
+  const periodStart = currentBillingPeriodStart(new Date());
+  let usage = await loadUsage(d1);
+  if (!usage || usage.periodStart !== periodStart) {
+    usage = { periodStart, rowsWritten: 0 };
+  }
+  if (
+    args.ifChanged && !resuming
+    && usage.rowsWritten + ESTIMATED_FULL_RESEED_ROWS > D1_FREE_ROWS_WRITTEN_PER_MONTH
+  ) {
+    console.log(
+      `⏸ D1 free-tier guard: ${usage.rowsWritten.toLocaleString()} rows written this cycle `
+      + `(since ${usage.periodStart}); a full reseed (~${ESTIMATED_FULL_RESEED_ROWS.toLocaleString()} rows) `
+      + `could exceed the ${D1_FREE_ROWS_WRITTEN_PER_MONTH.toLocaleString()}/month free allowance. `
+      + `Suspending until the cycle resets on ${nextBillingPeriodStart(usage.periodStart)}.`,
+    );
+    await saveUsage(d1, usage);
+    clearCheckpoint();
+    return;
+  }
+
   const startedAt = Date.now();
   let totalRows = 0;
 
@@ -251,6 +357,8 @@ async function main() {
     // On a fresh start for this table (not resuming mid-table), wipe it.
     // Otherwise the table is already partially populated and we resume.
     if (skipRows === 0 && !args.restart) {
+      const [{ c }] = await d1.query<{ c: number }>(`SELECT COUNT(*) as c FROM ${spec.table}`);
+      totalDeleted += c;
       await d1.exec(`DELETE FROM ${spec.table}`);
     }
 
@@ -272,7 +380,7 @@ async function main() {
     console.log(`  ✓ ${spec.table}: ${written.toLocaleString()} rows in ${secs}s`);
   }
 
-  await deriveRouteTypes(d1, args.parallel);
+  const routeTypeUpdates = await deriveRouteTypes(d1, args.parallel);
 
   // Stamp last_ingest + feed_content_hash so the next --if-changed run can
   // tell whether the schedule actually moved. contentHash was already
@@ -291,6 +399,15 @@ async function main() {
      VALUES('feed_content_hash', ?1, ?2)
      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
     [contentHash, nowUnix],
+  );
+
+  // Record this run's D1 row-writes (deletes + inserts + route_types
+  // updates) against the free-tier guard's running total for this cycle.
+  usage.rowsWritten += totalDeleted + totalRows + routeTypeUpdates;
+  await saveUsage(d1, usage);
+  console.log(
+    `  · D1 usage this cycle (since ${usage.periodStart}): `
+    + `${usage.rowsWritten.toLocaleString()}/${D1_FREE_ROWS_WRITTEN_PER_MONTH.toLocaleString()} rows written`,
   );
 
   clearCheckpoint();
@@ -333,7 +450,7 @@ async function ensureGtfsExtracted(resuming: boolean): Promise<void> {
  * The UPDATE is naturally idempotent (re-running over the same stop sets
  * the same value), so this is safe to retry on a partial failure.
  */
-async function deriveRouteTypes(d1: D1Client, parallel: number): Promise<void> {
+async function deriveRouteTypes(d1: D1Client, parallel: number): Promise<number> {
   console.log("→ deriving route_types per stop (chunked)");
   const stopIds = (await d1.query<{ stop_id: string }>(`SELECT stop_id FROM stops`))
     .map(r => r.stop_id);
@@ -359,6 +476,7 @@ async function deriveRouteTypes(d1: D1Client, parallel: number): Promise<void> {
   await pool.drain();
   process.stdout.write("\r" + " ".repeat(60) + "\r");
   console.log(`  ✓ route_types: ${stopIds.length.toLocaleString()} stops`);
+  return stopIds.length;
 }
 
 /**
