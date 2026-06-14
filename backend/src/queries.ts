@@ -845,7 +845,7 @@ export async function planJourney(
 
     const tu = tripUpdates.get(r.trip_id);
     if (tu?.schedule_relationship === 3) continue;     // cancelled trip
-    const stu = tu?.stop_time_updates.find(s => s.stop_id === r.board_stop);
+    const stu = tu?.stop_time_updates.find((s: { stop_id: string }) => s.stop_id === r.board_stop);
     const delaySec = stu?.departure_delay ?? stu?.arrival_delay ?? null;
 
     const predictedBoardMs = delaySec != null ? boardMs + delaySec * 1000 : boardMs;
@@ -1286,7 +1286,7 @@ export async function getDepartures(
     const isCancelled = tu?.schedule_relationship === 3;
     // Match the RT update against the specific platform stop the trip touches,
     // not the user's queried id (which may be a station aggregating many).
-    const stuMatch = tu?.stop_time_updates.find(s => s.stop_id === r.stop_id);
+    const stuMatch = tu?.stop_time_updates.find((s: { stop_id: string }) => s.stop_id === r.stop_id);
     const delaySec = stuMatch?.departure_delay ?? stuMatch?.arrival_delay ?? null;
 
     out.push({
@@ -1336,9 +1336,12 @@ async function fetchScheduledRows(
   serviceIds: string[],
 ): Promise<ScheduledRow[]> {
   if (stopIds.length === 0 || serviceIds.length === 0) return [];
-  const stopPh = stopIds.map((_, i) => `?${i + 1}`).join(",");
-  const serviceOff = stopIds.length + 1;
-  const servicePh = serviceIds.map((_, i) => `?${i + serviceOff}`).join(",");
+  // Both lists are D1-sourced (trusted) and a week-long lookahead at a
+  // multi-platform station can push their combined size past D1's
+  // 100-bound-parameter cap. Inline as escaped SQL literals instead,
+  // matching the technique used for stop ids in planJourney.
+  const stopLiteral = stopIds.map(id => `'${id.replace(/'/g, "''")}'`).join(",");
+  const serviceLiteral = serviceIds.map(id => `'${id.replace(/'/g, "''")}'`).join(",");
   const { results } = await env.DB.prepare(
     `SELECT st.trip_id, st.stop_id, t.route_id,
             r.route_short_name, r.route_long_name, r.route_type,
@@ -1347,10 +1350,10 @@ async function fetchScheduledRows(
      FROM stop_times st
      JOIN trips t ON t.trip_id = st.trip_id
      JOIN routes r ON r.route_id = t.route_id
-     WHERE st.stop_id IN (${stopPh})
-       AND t.service_id IN (${servicePh})
+     WHERE st.stop_id IN (${stopLiteral})
+       AND t.service_id IN (${serviceLiteral})
        AND st.pickup_type != 1`
-  ).bind(...stopIds, ...serviceIds).all<ScheduledRow>();
+  ).all<ScheduledRow>();
   return results ?? [];
 }
 

@@ -2,7 +2,7 @@
 
 iOS app + Cloudflare Workers backend for the TransLink South East Queensland open data feed (GTFS static + GTFS-Realtime). The on-device app is branded **TransitQLD**; the backend and repository keep the legacy `translink-qld` naming so deployed URLs and stored credentials stay stable.
 
-**v1 scope:** nearby stops, live next departures, vehicle positions on the map.
+**v1 scope:** nearby stops, live next departures, A→B journey planning.
 
 ## Repository layout
 
@@ -104,11 +104,15 @@ Once deployed, update [ios/TransLinkQLD/Services/AppConfig.swift](ios/TransLinkQ
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/v1/health` | Last ingest timestamp |
+| GET | `/v1/stops/search?q=&lat=&lon=&limit=` | Name/code search, optionally distance-sorted |
 | GET | `/v1/stops/nearby?lat=&lon=&radius_m=&limit=` | Bounding-box + Haversine sort |
 | GET | `/v1/stops/{stop_id}` | Stop + routes serving it |
 | GET | `/v1/stops/{stop_id}/departures?window_min=&limit=` | Schedule merged with realtime delays/cancellations |
 | GET | `/v1/routes/{route_id}` | Route detail |
-| GET | `/v1/vehicles?bbox=minLon,minLat,maxLon,maxLat` | Live vehicle positions (~20 s cache) |
+| GET | `/v1/routes/{short_name}/stops` | Ordered stop sequence for a route |
+| GET | `/v1/routes/{short_name}/nearest-stop?lat=&lon=` | Closest stop on a route to a point |
+| GET | `/v1/routes/schools?lat=&lon=&radius_m=&limit=` | School routes serving stops near a point |
+| GET | `/v1/journey?from_lat=&from_lon=&to_lat=&to_lon=&window_min=&walk_m=&limit=&transfers=` | A→B journey options (direct, or one-transfer with `transfers=1`) |
 
 ## iOS setup
 
@@ -124,8 +128,8 @@ In Xcode: pick a Simulator (e.g. iPhone 15 Pro), ⌘R to run. The first launch w
 
 ## Known limitations / next steps
 
-- **Bulk ingest is laptop-driven by design.** Run `npm run seed` whenever TransLink republishes the feed (typically weekly). The script parallelises writes against D1's REST API and finishes in ~30–45 min. Use `npm run seed:status` to verify counts. Moving the ingest server-side would mean a Workers + Queues + R2 pipeline (one queue message per GTFS file) — out of scope while the laptop flow works.
-- **No trip planner.** v1 is "what's near me, what's leaving next." A→B routing needs either an external service (OpenTripPlanner) or a graph-search engine on top of GTFS.
+- **Bulk ingest is laptop-driven by design.** Run `npm run seed` whenever TransLink republishes the feed (typically weekly). The script parallelises writes against D1's REST API and takes roughly 3–5 hours. Use `npm run seed:status` to verify counts. Moving the ingest server-side would mean a Workers + Queues + R2 pipeline (one queue message per GTFS file) — out of scope while the laptop flow works.
+- **Journey planning is direct + single-transfer only.** `/v1/journey` finds direct trips and, with `transfers=1`, one-transfer journeys via hub stations. Multi-transfer routing would need a full graph-search engine (e.g. RAPTOR) on top of GTFS.
 - **No alerts feed parsing yet.** The TransLink GTFS-RT Alerts URL is wired into `wrangler.toml` but not surfaced through an endpoint.
 - **No offline mode.** Every screen depends on the Worker being reachable. A future v1.1 could cache the last `nearby` and `departures` responses in `URLCache` + `Disk`.
 - **Time zone handling for `departure_time`** assumes Brisbane (UTC+10, no DST). This is correct for SEQ but rebuild the helpers in [backend/src/queries.ts](backend/src/queries.ts) if you extend to other regions.

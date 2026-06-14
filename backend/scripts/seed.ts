@@ -3,7 +3,7 @@
  *
  * Runs the full SEQ GTFS feed (agencies → stop_times) in one pass against
  * the Cloudflare D1 REST API. Designed for the $5/mo Workers Paid plan —
- * no daily-budget chunking; the seed finishes in ~30–45 min.
+ * no daily-budget chunking; the seed takes roughly 3–5 hours.
  *
  * Resume points
  * -------------

@@ -3,7 +3,8 @@ export interface Env {
   RT_CACHE: KVNamespace;
   TRANSLINK_GTFS_URL: string;
   TRANSLINK_RT_TRIP_UPDATES: string;
-  TRANSLINK_RT_VEHICLE_POSITIONS: string;
+  // Reserved for a future alerts endpoint — not yet read anywhere (see
+  // README "Known limitations").
   TRANSLINK_RT_ALERTS: string;
   RT_CACHE_TTL_SECONDS: string;
 }
@@ -47,15 +48,4 @@ export interface Departure {
   delay_seconds: number | null;
   is_realtime: boolean;
   is_cancelled: boolean;
-}
-
-export interface VehiclePosition {
-  vehicle_id: string;
-  trip_id: string | null;
-  route_id: string | null;
-  lat: number;
-  lon: number;
-  bearing: number | null;
-  speed: number | null;
-  timestamp: number;
 }

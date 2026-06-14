@@ -28,7 +28,7 @@ CREATE TABLE stops (
   parent_station TEXT,
   platform_code  TEXT,
   -- Comma-separated GTFS route_type values for the routes serving this stop.
-  -- Populated by the ingest finalization step (see scripts/ingest.ts).
+  -- Populated by the ingest finalization step (see scripts/seed.ts).
   -- e.g. "3" (bus only), "3,4" (bus + ferry), "2" (rail only).
   route_types    TEXT
 );

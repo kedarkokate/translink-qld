@@ -1,5 +1,5 @@
 import GtfsRealtimeBindings from "gtfs-realtime-bindings";
-import type { Env, VehiclePosition } from "./types";
+import type { Env } from "./types";
 
 const { FeedMessage } = GtfsRealtimeBindings.transit_realtime;
 
@@ -63,26 +63,4 @@ export async function getTripUpdates(env: Env): Promise<Map<string, TripUpdate>>
     return out;
   });
   return new Map(feed.map(t => [t.trip_id, t]));
-}
-
-export async function getVehiclePositions(env: Env): Promise<VehiclePosition[]> {
-  return cached(env, "vehicle_positions", async () => {
-    const decoded = await fetchAndDecode(env.TRANSLINK_RT_VEHICLE_POSITIONS);
-    const out: VehiclePosition[] = [];
-    for (const e of decoded.entity ?? []) {
-      const vp = e.vehicle;
-      if (!vp?.position) continue;
-      out.push({
-        vehicle_id: vp.vehicle?.id ?? e.id,
-        trip_id: vp.trip?.tripId ?? null,
-        route_id: vp.trip?.routeId ?? null,
-        lat: vp.position.latitude,
-        lon: vp.position.longitude,
-        bearing: vp.position.bearing ?? null,
-        speed: vp.position.speed ?? null,
-        timestamp: Number(vp.timestamp ?? 0),
-      });
-    }
-    return out;
-  });
 }

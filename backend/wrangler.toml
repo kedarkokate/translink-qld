@@ -15,6 +15,6 @@ id = "81f9f0a72cba43ca86547f2598459f65"
 [vars]
 TRANSLINK_GTFS_URL = "https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip"
 TRANSLINK_RT_TRIP_UPDATES = "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates"
-TRANSLINK_RT_VEHICLE_POSITIONS = "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions"
+# Reserved for a future alerts endpoint — not yet read anywhere.
 TRANSLINK_RT_ALERTS = "https://gtfsrt.api.translink.com.au/api/realtime/SEQ/Alerts"
 RT_CACHE_TTL_SECONDS = "20"

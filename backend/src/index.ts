@@ -6,7 +6,6 @@ import {
   getRoute, getDepartures, findNearestStopForRoute, searchStops,
   planJourney, getStopsForRoute, findSchoolRoutesNear,
 } from "./queries";
-import { getVehiclePositions } from "./gtfsRt";
 import { PRIVACY_HTML } from "./privacy";
 import { SUPPORT_HTML } from "./support";
 
@@ -139,18 +138,6 @@ app.get("/v1/journey", async c => {
     c.env, fromLat, fromLon, toLat, toLon, windowMin, walkRadiusM, limit, withTransfers,
   );
   return c.json({ options });
-});
-
-app.get("/v1/vehicles", async c => {
-  const bbox = c.req.query("bbox");  // "minLon,minLat,maxLon,maxLat"
-  const all = await getVehiclePositions(c.env);
-  if (!bbox) return c.json({ vehicles: all });
-  const [minLon, minLat, maxLon, maxLat] = bbox.split(",").map(Number);
-  const filtered = all.filter(v =>
-    v.lat >= minLat && v.lat <= maxLat &&
-    v.lon >= minLon && v.lon <= maxLon
-  );
-  return c.json({ vehicles: filtered });
 });
 
 export default app;
