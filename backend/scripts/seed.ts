@@ -37,6 +37,7 @@ import {
   createWriteStream, createReadStream,
   existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, renameSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -142,22 +143,25 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 /**
- * HEAD the GTFS zip. Returns the upstream ETag + Last-Modified, which we
- * stamp into feed_meta on every successful seed and compare against in
- * `--if-changed` mode so the daily cron exits in <1s when nothing's new.
+ * SHA-256 over the concatenation of the GTFS .txt files we actually ingest,
+ * in TABLES order. Upstream re-packages the feed (new ETag/Last-Modified)
+ * far more often than the schedule data inside actually changes, so the
+ * hash of the extracted CSVs is the only reliable "did anything change?"
+ * signal for `--if-changed`.
  */
-async function fetchFeedHeaders(): Promise<{ etag: string | null; lastModified: string | null }> {
-  const res = await fetch(GTFS_URL, { method: "HEAD" });
-  if (!res.ok) throw new Error(`HEAD ${GTFS_URL} → ${res.status}`);
-  return {
-    etag: res.headers.get("etag"),
-    lastModified: res.headers.get("last-modified"),
-  };
+async function computeFeedHash(extractedDir: string): Promise<string> {
+  const hash = createHash("sha256");
+  for (const spec of TABLES) {
+    for await (const chunk of createReadStream(path.join(extractedDir, spec.file))) {
+      hash.update(chunk as Buffer);
+    }
+  }
+  return hash.digest("hex");
 }
 
-async function fetchStoredEtag(d1: D1Client): Promise<string | null> {
+async function fetchStoredHash(d1: D1Client): Promise<string | null> {
   const rows = await d1.query<{ value: string }>(
-    `SELECT value FROM feed_meta WHERE key = 'feed_etag' LIMIT 1`,
+    `SELECT value FROM feed_meta WHERE key = 'feed_content_hash' LIMIT 1`,
   );
   return rows[0]?.value ?? null;
 }
@@ -189,24 +193,6 @@ async function main() {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${dbId}/query`;
   const d1 = makeClient(endpoint, token);
 
-  // --if-changed: short-circuit when the upstream ETag matches what we
-  // stamped at the last successful seed. Costs one HEAD request (~1s) so
-  // the daily launchd cron is essentially free on no-op days.
-  // A pending checkpoint always wins — finish what we started before
-  // deciding whether the upstream has moved on.
-  let upstreamHeaders: { etag: string | null; lastModified: string | null } | null = null;
-  if (args.ifChanged && !existsSync(STATE_FILE)) {
-    upstreamHeaders = await fetchFeedHeaders();
-    const storedEtag = await fetchStoredEtag(d1);
-    if (storedEtag && upstreamHeaders.etag && storedEtag === upstreamHeaders.etag) {
-      console.log(`✓ feed unchanged (etag=${storedEtag}); no seed needed`);
-      return;
-    }
-    console.log(
-      `→ feed changed (upstream=${upstreamHeaders.etag ?? "?"}, stored=${storedEtag ?? "none"}); seeding`,
-    );
-  }
-
   if (args.restart) {
     console.log("↻ --restart: clearing checkpoint, cache, and wiping all GTFS tables");
     clearCheckpoint();
@@ -231,6 +217,24 @@ async function main() {
   );
 
   await ensureGtfsExtracted(resuming);
+
+  // --if-changed: short-circuit when the downloaded feed's content hash
+  // matches what we stamped at the last successful seed. Only applies on a
+  // fresh run — a pending checkpoint always wins, so we finish what we
+  // started before deciding whether the upstream has moved on.
+  let contentHash: string | null = null;
+  if (args.ifChanged && !resuming) {
+    contentHash = await computeFeedHash(GTFS_EXTRACTED);
+    const storedHash = await fetchStoredHash(d1);
+    if (storedHash === contentHash) {
+      console.log(`✓ feed content unchanged (hash=${contentHash.slice(0, 12)}…); no seed needed`);
+      clearCheckpoint();
+      return;
+    }
+    console.log(
+      `→ feed content changed (${storedHash?.slice(0, 12) ?? "none"} → ${contentHash.slice(0, 12)}…); seeding`,
+    );
+  }
 
   const startedAt = Date.now();
   let totalRows = 0;
@@ -270,15 +274,10 @@ async function main() {
 
   await deriveRouteTypes(d1, args.parallel);
 
-  // Stamp last_ingest + feed_etag/feed_last_modified. The headers were
-  // captured pre-seed in --if-changed mode; otherwise fetch them now so a
-  // manual run still records what we just ingested. If the HEAD fails we
-  // continue with nulls — better to land the seed than to refuse the
-  // metadata stamp over a transient network hiccup.
-  if (!upstreamHeaders) {
-    try { upstreamHeaders = await fetchFeedHeaders(); }
-    catch { upstreamHeaders = { etag: null, lastModified: null }; }
-  }
+  // Stamp last_ingest + feed_content_hash so the next --if-changed run can
+  // tell whether the schedule actually moved. contentHash was already
+  // computed above unless this was a manual run without --if-changed.
+  contentHash ??= await computeFeedHash(GTFS_EXTRACTED);
   const nowIso = new Date().toISOString();
   const nowUnix = Math.floor(Date.now() / 1000);
   await d1.exec(
@@ -287,17 +286,11 @@ async function main() {
      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
     [nowIso, nowUnix],
   );
-  if (upstreamHeaders.etag) await d1.exec(
+  await d1.exec(
     `INSERT INTO feed_meta(key, value, updated_at)
-     VALUES('feed_etag', ?1, ?2)
+     VALUES('feed_content_hash', ?1, ?2)
      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
-    [upstreamHeaders.etag, nowUnix],
-  );
-  if (upstreamHeaders.lastModified) await d1.exec(
-    `INSERT INTO feed_meta(key, value, updated_at)
-     VALUES('feed_last_modified', ?1, ?2)
-     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
-    [upstreamHeaders.lastModified, nowUnix],
+    [contentHash, nowUnix],
   );
 
   clearCheckpoint();

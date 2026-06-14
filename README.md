@@ -74,28 +74,19 @@ Then:
 
 ```bash
 npm run seed              # full feed in one pass; ~2–3 h, writes ~4.2M rows
-npm run seed:if-changed   # HEAD-checks upstream ETag, seeds only if changed (~1s no-op)
+npm run seed:if-changed   # downloads + hashes the feed, seeds only if the content changed
 npm run seed:status       # row counts: remote vs source, per table
 ```
 
-The seed downloads `SEQ_GTFS.zip` (~50 MB), parses each CSV, and dispatches INSERT batches to D1 with bounded concurrency. It writes a `backend/.seed-state.json` checkpoint every 50k rows — if the run is interrupted (Ctrl-C, lost connection, laptop sleep), rerunning `npm run seed` picks up exactly where it left off. Re-wipe + restart from scratch with `npm run seed -- --restart`. On a successful seed, the upstream `ETag`/`Last-Modified` headers are stamped into `feed_meta` so `--if-changed` can detect when the next reseed is actually needed.
+The seed downloads `SEQ_GTFS.zip` (~50 MB), parses each CSV, and dispatches INSERT batches to D1 with bounded concurrency. It writes a `backend/.seed-state.json` checkpoint every 50k rows — if the run is interrupted (Ctrl-C, lost connection, laptop sleep), rerunning `npm run seed` picks up exactly where it left off. Re-wipe + restart from scratch with `npm run seed -- --restart`. On a successful seed, a SHA-256 hash of the ingested CSVs is stamped into `feed_meta` so `--if-changed` can tell whether the next reseed is actually needed — TransLink re-packages the zip (new ETag/Last-Modified) far more often than the schedule data itself changes, so a content hash is the only reliable signal.
 
-#### Production: daily auto-seed via GitHub Actions
+#### Auto-seed via GitHub Actions
 
-[.github/workflows/seed.yml](.github/workflows/seed.yml) runs `npm run seed:if-changed` daily at 20:00 UTC (06:00 Brisbane). Most days it exits in ~2 min (Node install + 1-second HEAD check); when TransLink republishes the feed the same workflow runs the full seed against D1.
+[.github/workflows/seed.yml](.github/workflows/seed.yml) runs `npm run seed:if-changed` Mondays and Thursdays at 20:00 UTC (06:00 Brisbane). Most runs are a quick no-op (Node install + download + hash, content unchanged); when the content hash differs the same workflow runs the full seed against D1.
 
 One-time setup: in the GitHub repo, go to **Settings → Secrets and variables → Actions → New repository secret** and add three secrets — `D1_ACCOUNT_ID`, `D1_API_TOKEN`, `D1_DATABASE_ID` (same values as `backend/.env`). Then trigger the workflow once via **Actions → Seed D1 → Run workflow** to verify the secrets resolve.
 
 To force a full reseed (e.g. after rotating credentials), use the **Run workflow** button with `force: true`.
-
-#### Alternative: daily auto-seed via launchd (laptop must be on)
-
-```bash
-cp backend/scripts/com.kedarkokate.translink-qld-seed.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.kedarkokate.translink-qld-seed.plist
-```
-
-Same behaviour as the GitHub Actions path, but on your laptop instead of a hosted runner. Use this if the repo is offline or you want to keep seeding local. Logs to `backend/seed-if-changed.log`. **Don't run both at once** — concurrent seeds would race writes to D1.
 
 ### 5. Run / deploy
 
