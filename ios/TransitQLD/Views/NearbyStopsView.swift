@@ -331,10 +331,7 @@ struct NearbyStopsView: View {
         Button {
             handleTileTap(tile)
         } label: {
-            tilePillLabel(
-                icon: tile.iconName, text: tile.label,
-                iconOnly: effectiveIconOnly(tile),
-            )
+            tilePillLabel(icon: tile.iconName)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tile.label)
@@ -359,44 +356,20 @@ struct NearbyStopsView: View {
                 icon: anyFilterActive
                     ? "line.3.horizontal.decrease.circle.fill"
                     : "line.3.horizontal.decrease.circle",
-                text: MapTileKind.filters.label,
-                iconOnly: effectiveIconOnly(.filters),
             )
         }
         .accessibilityLabel("Filters")
         .contextMenu { tileLayoutMenu }
     }
 
-    /// When a route is focused on the map the camera is zoomed to fit two
-    /// distant points and the tile stack can crowd the screen — collapse all
-    /// pills to icon-only in that mode. The clear-focus pill keeps its text
-    /// because the route name is meaningful content.
-    private func effectiveIconOnly(_ tile: MapTileKind) -> Bool {
-        if focusedStop != nil { return true }
-        return tile.iconOnlyOnMap
-    }
-
-    private func tilePillLabel(icon: String, text: String, iconOnly: Bool) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-            if !iconOnly {
-                Text(text)
-                    .fontWeight(.semibold)
-                    // Without lineLimit + fixedSize a horizontal HStack of
-                    // pills that overflows the screen squishes each pill,
-                    // and the inner Text wraps character-by-character into
-                    // a vertical stripe of letters. Clamp to one line and
-                    // let the pill keep its natural width.
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-        }
-        .font(.subheadline)
-        .foregroundStyle(Color.primary)
-        .padding(.horizontal, iconOnly ? 11 : 14)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
+    private func tilePillLabel(icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.subheadline)
+            .foregroundStyle(Color.primary)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().stroke(.quaternary, lineWidth: 0.5))
     }
 
     @ViewBuilder

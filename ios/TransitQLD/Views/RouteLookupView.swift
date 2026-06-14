@@ -217,27 +217,22 @@ struct RouteLookupView: View {
         routeColor: String?, routeTextColor: String?,
         headsign: String?, stop: NearbyStop,
     ) -> some View {
-        let existing = favourites.service(
-            matching: stop.stopId, route: route,
+        let isFav = favourites.isServiceFavourite(
+            stopId: stop.stopId, route: route,
             headsign: headsign, secondsSinceMidnight: nil,
         )
-        let isFav = existing != nil
         Button {
-            if let fav = existing {
-                favourites.removeService(id: fav.id)
-            } else {
-                favourites.addService(FavouriteService(
-                    stopId: stop.stopId, stopName: stop.stopName,
-                    stopCode: stop.stopCode,
-                    stopLat: stop.stopLat, stopLon: stop.stopLon,
-                    routeTypes: stop.routeTypes,
-                    routeShortName: route, routeLongName: routeLongName,
-                    routeType: routeType,
-                    routeColor: routeColor, routeTextColor: routeTextColor,
-                    headsign: headsign,
-                    scheduledSecondsSinceMidnight: nil,
-                ))
-            }
+            favourites.toggleService(FavouriteService(
+                stopId: stop.stopId, stopName: stop.stopName,
+                stopCode: stop.stopCode,
+                stopLat: stop.stopLat, stopLon: stop.stopLon,
+                routeTypes: stop.routeTypes,
+                routeShortName: route, routeLongName: routeLongName,
+                routeType: routeType,
+                routeColor: routeColor, routeTextColor: routeTextColor,
+                headsign: headsign,
+                scheduledSecondsSinceMidnight: nil,
+            ))
         } label: {
             Image(systemName: isFav ? "star.fill" : "star")
                 .font(.system(size: 17))
@@ -249,9 +244,6 @@ struct RouteLookupView: View {
         .accessibilityLabel(isFav ? "Remove favourite" : "Favourite route \(route) at this stop")
     }
 
-    // MARK: School routes
-
-    /// School routes lives behind a disclosure so the Route sheet opens
     // MARK: Train lines
 
     /// SEQ rail lines as recognisable by users — by line name with brand
@@ -335,6 +327,9 @@ struct RouteLookupView: View {
         }
     }
 
+    // MARK: School routes
+
+    /// School routes lives behind a disclosure so the Route sheet opens
     /// focused on the route-number search. Persists expanded/collapsed
     /// state so a user who wants school routes daily doesn't have to
     /// re-tap every time.
@@ -463,7 +458,7 @@ struct RouteLookupView: View {
     private func formatNextDeparture(_ d: Date) -> String {
         let cal = Calendar.current
         let now = Date()
-        let time = d.formatted(date: .omitted, time: .shortened)
+        let time = d.timeOfDay
         if cal.isDateInToday(d) {
             let mins = Int(d.timeIntervalSince(now) / 60)
             if mins <= 0 { return "\(time) (now)" }

@@ -6,8 +6,6 @@ import Observation
 /// avoids the ceremony of SwiftData for ~tens of records.
 @Observable
 final class FavouritesStore {
-    static let shared = FavouritesStore()
-
     private(set) var stops: [FavouriteStop] = []
     private(set) var services: [FavouriteService] = []
 
@@ -93,6 +91,20 @@ final class FavouritesStore {
     func removeService(id: UUID) {
         services.removeAll { $0.id == id }
         save()
+    }
+
+    /// Toggle a favourite service on/off: removes the existing matching
+    /// favourite (same stop + route + headsign + time-of-day) if one
+    /// exists, otherwise adds `service`.
+    func toggleService(_ service: FavouriteService) {
+        if let existing = self.service(
+            matching: service.stopId, route: service.routeShortName,
+            headsign: service.headsign, secondsSinceMidnight: service.scheduledSecondsSinceMidnight,
+        ) {
+            removeService(id: existing.id)
+        } else {
+            addService(service)
+        }
     }
 
     // MARK: - Computed

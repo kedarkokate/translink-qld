@@ -400,24 +400,8 @@ struct DirectionsView: View {
         .accessibilityLabel(isPinned ? "Unpin journey" : "Pin this journey")
     }
 
-    /// Build a minimal `NearbyStop` from a journey leg's stop reference so
-    /// we can hand it to the map's existing `focusOnRouteStop` machinery.
-    /// We don't have stop_code / parent_station here so set defensible
-    /// defaults; the map only cares about coordinate + name + route_types
-    /// for the marker tint.
     private func nearbyStop(from ref: JourneyStopRef, routeType: Int) -> NearbyStop {
-        NearbyStop(
-            stopId: ref.stopId,
-            stopCode: nil,
-            stopName: ref.stopName,
-            stopLat: ref.stopLat,
-            stopLon: ref.stopLon,
-            locationType: 0,
-            parentStation: nil,
-            platformCode: nil,
-            routeTypes: "\(routeType)",
-            distanceM: Double(ref.walkDistanceM),
-        )
+        NearbyStop(journeyStop: ref, routeType: routeType)
     }
 
     private func routeBadge(_ route: JourneyRoute, headsign: String? = nil) -> some View {
@@ -442,67 +426,35 @@ struct DirectionsView: View {
     /// Pill / step label for a journey route. Trains get the destination /
     /// line name; other modes keep their existing short name.
     private func routeLabel(_ route: JourneyRoute, headsign: String?) -> String {
-        let isTrain = (route.routeType == RouteType.rail.rawValue
-                       || route.routeType == RouteType.subway.rawValue)
-        if isTrain {
-            if let h = trainPillLabel(headsign: headsign) { return h }
-            if let line = trainLine(longName: route.routeLongName,
-                                    routeColor: route.routeColor) {
-                return line.pillName
-            }
-        }
-        return route.displayName
+        RouteStyle.label(
+            routeType: route.routeType, routeShortName: route.routeShortName,
+            routeLongName: route.routeLongName, routeColor: route.routeColor,
+            headsign: headsign,
+        )
     }
 
     /// Background / icon tint for a journey route. Trains use the GTFS
     /// `route_color` (or the mapped line colour) so each line gets its
     /// official TransLink hue.
     private func routeTint(_ route: JourneyRoute, headsign: String?) -> Color {
-        let isTrain = (route.routeType == RouteType.rail.rawValue
-                       || route.routeType == RouteType.subway.rawValue)
-        if isTrain {
-            if let c = Color(gtfsHex: route.routeColor) { return c }
-            if let line = trainLine(longName: route.routeLongName,
-                                    routeColor: route.routeColor),
-               let c = Color(gtfsHex: line.hex) { return c }
-        }
-        return defaultRouteColor(route.routeType)
+        RouteStyle.tint(
+            routeType: route.routeType, routeColor: route.routeColor,
+            routeLongName: route.routeLongName, headsign: headsign,
+        )
     }
 
     /// Foreground (text) colour for the pill — honours GTFS `route_text_color`
     /// when present so yellow Airport / Gold Coast pills get black text.
     private func routeForeground(_ route: JourneyRoute) -> Color {
-        let isTrain = (route.routeType == RouteType.rail.rawValue
-                       || route.routeType == RouteType.subway.rawValue)
-        if isTrain, let c = Color(gtfsHex: route.routeTextColor) { return c }
-        return .white
-    }
-
-    private func defaultRouteColor(_ rt: Int) -> Color {
-        switch RouteType(rawValue: rt) {
-        case .bus: return .blue
-        case .rail, .subway: return .indigo
-        case .ferry: return NearbyStop.ferryTint
-        case .tram: return .pink
-        default: return .gray
-        }
+        RouteStyle.foreground(routeType: route.routeType, routeTextColor: route.routeTextColor)
     }
 
     private func routeIcon(_ rt: Int) -> String {
-        switch RouteType(rawValue: rt) {
-        case .bus: return "bus.fill"
-        case .rail, .subway: return "train.side.front.car"
-        case .ferry: return "ferry.fill"
-        case .tram: return "tram.fill"
-        default: return "bus.fill"
-        }
+        RouteStyle.icon(routeType: rt)
     }
 
     private func formatTime(_ d: Date) -> String {
-        let fmt = DateFormatter()
-        fmt.timeStyle = .short
-        fmt.dateStyle = .none
-        return fmt.string(from: d)
+        d.timeOfDay
     }
 
     // MARK: Search

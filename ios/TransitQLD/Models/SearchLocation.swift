@@ -54,10 +54,3 @@ struct SearchLocation: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (a: SearchLocation, b: SearchLocation) -> Bool { a.id == b.id }
 }
-
-private func parseRouteTypes(_ raw: String?) -> Set<Int> {
-    guard let raw, !raw.isEmpty else { return [] }
-    return Set(raw.split(separator: ",").compactMap {
-        Int($0.trimmingCharacters(in: .whitespaces))
-    })
-}

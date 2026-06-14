@@ -37,9 +37,7 @@ struct FavouriteStop: Codable, Identifiable, Hashable {
     func asNearbyStop() -> NearbyStop {
         NearbyStop(
             stopId: stopId, stopCode: stopCode, stopName: stopName,
-            stopLat: lat, stopLon: lon, locationType: 0,
-            parentStation: nil, platformCode: nil,
-            routeTypes: routeTypes, distanceM: 0,
+            lat: lat, lon: lon, routeTypes: routeTypes, distanceM: 0,
         )
     }
 }
@@ -107,9 +105,7 @@ struct FavouriteService: Codable, Identifiable, Hashable {
     func asNearbyStop() -> NearbyStop {
         NearbyStop(
             stopId: stopId, stopCode: stopCode, stopName: stopName,
-            stopLat: stopLat, stopLon: stopLon, locationType: 0,
-            parentStation: nil, platformCode: nil,
-            routeTypes: routeTypes, distanceM: 0,
+            lat: stopLat, lon: stopLon, routeTypes: routeTypes, distanceM: 0,
         )
     }
 
@@ -121,7 +117,7 @@ struct FavouriteService: Codable, Identifiable, Hashable {
         let m = (total / 60) % 60
         let comps = DateComponents(hour: h, minute: m)
         let date = Calendar.current.date(from: comps) ?? Date()
-        return date.formatted(date: .omitted, time: .shortened)
+        return date.timeOfDay
     }
 
     /// True when this favourite is time-specific (a particular scheduled

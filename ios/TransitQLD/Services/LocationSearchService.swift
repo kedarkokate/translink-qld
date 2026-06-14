@@ -67,12 +67,11 @@ final class LocationSearchService: NSObject, MKLocalSearchCompleterDelegate {
             // Keep prior results visible; surface error softly
             self.error = error.localizedDescription
         }
-        // The completer also fires `completerDidUpdateResults` — loading stays
-        // true until that arrives. As a fallback, clear it after a short delay.
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(800))
-            self.loading = false
-        }
+        // `completerDidUpdateResults` / `completer(_:didFailWithError:)` also
+        // clear `loading`, but the completer's delegate isn't guaranteed to
+        // fire again if `queryFragment` produces the same results as last
+        // time — clear it here too so the spinner never gets stuck.
+        loading = false
     }
 
     func resolveCompletion(_ completion: MKLocalSearchCompletion) async throws -> SearchLocation {

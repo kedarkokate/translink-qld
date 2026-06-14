@@ -141,25 +141,20 @@ struct RouteStopsView: View {
     }
 
     private func foregroundForRoute(_ r: RouteStopsResponse) -> Color {
-        if r.routeType == RouteType.rail.rawValue || r.routeType == RouteType.subway.rawValue,
-           let c = Color(gtfsHex: r.routeTextColor) {
-            return c
-        }
-        return .white
+        RouteStyle.foreground(routeType: r.routeType, routeTextColor: r.routeTextColor)
     }
 
     private func tintForRoute(_ r: RouteStopsResponse) -> Color {
-        if r.routeType == RouteType.rail.rawValue || r.routeType == RouteType.subway.rawValue {
+        if RouteStyle.isTrain(r.routeType) {
             let line = trainLine(longName: r.routeLongName, routeColor: r.routeColor)
             // The City Loop's GTFS route_color (A0A0A0, a flat "no brand"
             // grey) is overridden by our own colour so the pill stands out.
             if line?.pillName == "City Loop", let c = Color(gtfsHex: line?.hex) {
                 return c
             }
-            if let c = Color(gtfsHex: r.routeColor) { return c }
-            if let c = Color(gtfsHex: line?.hex) { return c }
         }
-        return routeColor(r.routeType)
+        return RouteStyle.tint(routeType: r.routeType, routeColor: r.routeColor,
+                                routeLongName: r.routeLongName)
     }
 
     /// Trailing-edge star on each stop row. Bookmarks "this route at this
@@ -172,33 +167,28 @@ struct RouteStopsView: View {
         in dir: RouteDirection,
         response r: RouteStopsResponse,
     ) -> some View {
-        let existing = favourites.service(
-            matching: stop.stopId, route: r.routeShortName,
+        let isFav = favourites.isServiceFavourite(
+            stopId: stop.stopId, route: r.routeShortName,
             headsign: dir.headsign, secondsSinceMidnight: nil,
         )
-        let isFav = existing != nil
         Button {
-            if let fav = existing {
-                favourites.removeService(id: fav.id)
-            } else {
-                favourites.addService(FavouriteService(
-                    stopId: stop.stopId, stopName: stop.stopName,
-                    stopCode: stop.stopCode,
-                    stopLat: stop.stopLat, stopLon: stop.stopLon,
-                    // The RouteStops endpoint doesn't surface per-stop
-                    // route_types (the comma-string of modes); leaving it nil
-                    // means the favourites list falls back to the route's
-                    // own route_type when picking an icon, which is correct.
-                    routeTypes: nil,
-                    routeShortName: r.routeShortName,
-                    routeLongName: r.routeLongName,
-                    routeType: r.routeType,
-                    routeColor: r.routeColor,
-                    routeTextColor: r.routeTextColor,
-                    headsign: dir.headsign,
-                    scheduledSecondsSinceMidnight: nil,
-                ))
-            }
+            favourites.toggleService(FavouriteService(
+                stopId: stop.stopId, stopName: stop.stopName,
+                stopCode: stop.stopCode,
+                stopLat: stop.stopLat, stopLon: stop.stopLon,
+                // The RouteStops endpoint doesn't surface per-stop
+                // route_types (the comma-string of modes); leaving it nil
+                // means the favourites list falls back to the route's
+                // own route_type when picking an icon, which is correct.
+                routeTypes: nil,
+                routeShortName: r.routeShortName,
+                routeLongName: r.routeLongName,
+                routeType: r.routeType,
+                routeColor: r.routeColor,
+                routeTextColor: r.routeTextColor,
+                headsign: dir.headsign,
+                scheduledSecondsSinceMidnight: nil,
+            ))
         } label: {
             Image(systemName: isFav ? "star.fill" : "star")
                 .font(.system(size: 17))
@@ -232,24 +222,8 @@ struct RouteStopsView: View {
         .contentShape(Rectangle())
     }
 
-    private func routeColor(_ rt: Int) -> Color {
-        switch RouteType(rawValue: rt) {
-        case .bus: return .blue
-        case .rail, .subway: return .indigo
-        case .ferry: return NearbyStop.ferryTint
-        case .tram: return .pink
-        default: return .gray
-        }
-    }
-
     private func routeIcon(_ rt: Int) -> String {
-        switch RouteType(rawValue: rt) {
-        case .bus: return "bus.fill"
-        case .rail, .subway: return "train.side.front.car"
-        case .ferry: return "ferry.fill"
-        case .tram: return "tram.fill"
-        default: return "bus.fill"
-        }
+        RouteStyle.icon(routeType: rt)
     }
 
     @MainActor

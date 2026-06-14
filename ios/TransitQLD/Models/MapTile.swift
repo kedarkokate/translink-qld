@@ -31,9 +31,6 @@ enum MapTileKind: String, Identifiable, CaseIterable, Codable {
         case .favourites: return "star.fill"
         }
     }
-
-    /// When true the on-map pill renders the icon only (no text label).
-    var iconOnlyOnMap: Bool { true }
 }
 
 enum MapTileOrder {

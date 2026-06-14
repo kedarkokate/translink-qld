@@ -125,16 +125,6 @@ final class TransLinkClient {
         return try await get(url, as: RouteNearestStop.self)
     }
 
-    func vehicles(in bbox: BoundingBox? = nil) async throws -> [VehiclePosition] {
-        struct Resp: Decodable { let vehicles: [VehiclePosition] }
-        var query: [String: String] = [:]
-        if let b = bbox {
-            query["bbox"] = "\(b.minLon),\(b.minLat),\(b.maxLon),\(b.maxLat)"
-        }
-        let url = try makeURL("/v1/vehicles", query: query)
-        return try await get(url, as: Resp.self).vehicles
-    }
-
     private func get<T: Decodable>(_ url: URL, as: T.Type) async throws -> T {
         let (data, resp) = try await session.data(from: url)
         guard let http = resp as? HTTPURLResponse else { throw TransLinkError.http(0) }
@@ -156,9 +146,4 @@ final class TransLinkClient {
         guard let url = comps.url else { throw TransLinkError.badURL }
         return url
     }
-}
-
-struct BoundingBox {
-    let minLat: Double; let minLon: Double
-    let maxLat: Double; let maxLon: Double
 }

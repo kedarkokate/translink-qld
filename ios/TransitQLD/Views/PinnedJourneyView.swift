@@ -150,45 +150,41 @@ struct PinnedJourneyView: View {
     }
 
     private func routeBadge(_ route: JourneyRoute, headsign: String?) -> some View {
-        Text(route.routeShortName ?? route.routeLongName ?? "?")
+        Text(routeLabel(route, headsign: headsign))
             .font(.subheadline.weight(.bold))
             .padding(.horizontal, 10).padding(.vertical, 4)
-            .foregroundStyle(Color(gtfsHex: route.routeTextColor) ?? .white)
+            .foregroundStyle(routeForeground(route))
             .background(routeTint(route, headsign: headsign), in: RoundedRectangle(cornerRadius: 6))
     }
 
     private func routeIcon(_ routeType: Int) -> String {
-        switch routeType {
-        case 2: return "tram.fill"
-        case 4: return "ferry.fill"
-        default: return "bus.fill"
-        }
+        RouteStyle.icon(routeType: routeType)
     }
 
     private func routeTint(_ route: JourneyRoute, headsign: String?) -> Color {
-        Color(gtfsHex: route.routeColor) ?? .blue
+        RouteStyle.tint(
+            routeType: route.routeType, routeColor: route.routeColor,
+            routeLongName: route.routeLongName, headsign: headsign,
+        )
+    }
+
+    private func routeForeground(_ route: JourneyRoute) -> Color {
+        RouteStyle.foreground(routeType: route.routeType, routeTextColor: route.routeTextColor)
     }
 
     private func routeLabel(_ route: JourneyRoute, headsign: String?) -> String {
-        route.routeShortName ?? route.routeLongName ?? "?"
+        RouteStyle.label(
+            routeType: route.routeType, routeShortName: route.routeShortName,
+            routeLongName: route.routeLongName, routeColor: route.routeColor,
+            headsign: headsign,
+        )
     }
 
     private func formatTime(_ d: Date) -> String {
-        d.formatted(date: .omitted, time: .shortened)
+        d.timeOfDay
     }
 
     private func asNearbyStop(_ ref: JourneyStopRef, mode: Int) -> NearbyStop {
-        NearbyStop(
-            stopId: ref.stopId,
-            stopCode: nil,
-            stopName: ref.stopName,
-            stopLat: ref.stopLat,
-            stopLon: ref.stopLon,
-            locationType: 0,
-            parentStation: nil,
-            platformCode: nil,
-            routeTypes: "\(mode)",
-            distanceM: Double(ref.walkDistanceM),
-        )
+        NearbyStop(journeyStop: ref, routeType: mode)
     }
 }

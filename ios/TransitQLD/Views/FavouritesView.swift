@@ -7,6 +7,7 @@ import SwiftUI
 struct FavouritesView: View {
     @Environment(FavouritesStore.self) private var favourites
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var departuresByStop: [String: [Departure]] = [:]
     @State private var loading = false
     @State private var error: String?
@@ -51,6 +52,14 @@ struct FavouritesView: View {
                 startAutoRefresh()
             }
             .onDisappear { refreshTask?.cancel() }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    Task { await reload() }
+                    startAutoRefresh()
+                } else {
+                    refreshTask?.cancel()
+                }
+            }
             .sheet(item: $selectedStop) { stop in
                 StopDetailView(stop: stop)
                     .presentationDetents([.fraction(0.45), .large])
@@ -97,9 +106,7 @@ struct FavouritesView: View {
         func asNearbyStop() -> NearbyStop {
             NearbyStop(
                 stopId: stopId, stopCode: stopCode, stopName: stopName,
-                stopLat: stopLat, stopLon: stopLon, locationType: 0,
-                parentStation: nil, platformCode: nil,
-                routeTypes: routeTypes, distanceM: 0,
+                lat: stopLat, lon: stopLon, routeTypes: routeTypes, distanceM: 0,
             )
         }
     }
@@ -315,7 +322,7 @@ struct FavouritesView: View {
     /// "Today 07:42", "Tomorrow 07:42", "Wed 07:42" — Brisbane-local clock.
     private func formatArrival(_ dep: Departure) -> String {
         let date = dep.effectiveDeparture
-        let time = date.formatted(date: .omitted, time: .shortened)
+        let time = date.timeOfDay
         let cal = Calendar.current
         if cal.isDateInToday(date) { return "Today \(time)" }
         if cal.isDateInTomorrow(date) { return "Tomorrow \(time)" }
@@ -327,8 +334,7 @@ struct FavouritesView: View {
         svc: FavouriteService, in deps: [Departure], limit: Int,
     ) -> [Departure] {
         let now = Date()
-        let isTrain = (svc.routeType == RouteType.rail.rawValue
-                       || svc.routeType == RouteType.subway.rawValue)
+        let isTrain = RouteStyle.isTrain(svc.routeType)
         return deps
             .filter { d in
                 guard !d.isCancelled,
@@ -405,26 +411,16 @@ struct FavouritesView: View {
     // MARK: - Service badge
 
     private func serviceBadge(_ svc: FavouriteService) -> some View {
-        let isTrain = (svc.routeType == RouteType.rail.rawValue
-                       || svc.routeType == RouteType.subway.rawValue)
-        let label: String = {
-            if isTrain {
-                if let h = trainPillLabel(headsign: svc.headsign) { return h }
-                if let line = trainLine(longName: svc.routeLongName, routeColor: svc.routeColor) {
-                    return line.pillName
-                }
-            }
-            return svc.routeShortName
-        }()
-        let bg: Color = {
-            if isTrain {
-                if let c = Color(gtfsHex: svc.routeColor) { return c }
-                if let line = trainLine(longName: svc.routeLongName, routeColor: svc.routeColor),
-                   let c = Color(gtfsHex: line.hex) { return c }
-            }
-            return defaultRouteColor(svc.routeType)
-        }()
-        let fg: Color = isTrain ? (Color(gtfsHex: svc.routeTextColor) ?? .white) : .white
+        let label = RouteStyle.label(
+            routeType: svc.routeType, routeShortName: svc.routeShortName,
+            routeLongName: svc.routeLongName, routeColor: svc.routeColor,
+            headsign: svc.headsign,
+        )
+        let bg = RouteStyle.tint(
+            routeType: svc.routeType, routeColor: svc.routeColor,
+            routeLongName: svc.routeLongName, headsign: svc.headsign,
+        )
+        let fg = RouteStyle.foreground(routeType: svc.routeType, routeTextColor: svc.routeTextColor)
         return Text(label)
             .font(.system(size: 13, weight: .bold, design: .rounded))
             .lineLimit(1).truncationMode(.tail).minimumScaleFactor(0.8)
@@ -432,15 +428,5 @@ struct FavouritesView: View {
             .foregroundStyle(fg)
             .background(bg, in: RoundedRectangle(cornerRadius: 8))
             .frame(minWidth: 64)
-    }
-
-    private func defaultRouteColor(_ rt: Int) -> Color {
-        switch RouteType(rawValue: rt) {
-        case .bus: return .blue
-        case .rail, .subway: return .indigo
-        case .ferry: return NearbyStop.ferryTint
-        case .tram: return .pink
-        default: return .gray
-        }
     }
 }

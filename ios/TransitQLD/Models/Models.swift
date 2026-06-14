@@ -1,6 +1,13 @@
 import Foundation
 import CoreLocation
 
+extension Date {
+    /// Locale-aware time-of-day, e.g. "7:42 AM" / "07:42".
+    var timeOfDay: String {
+        formatted(date: .omitted, time: .shortened)
+    }
+}
+
 struct Stop: Codable, Identifiable, Hashable {
     let stopId: String
     let stopCode: String?
@@ -67,7 +74,36 @@ struct NearbyStop: Codable, Identifiable, Hashable {
     }
 }
 
-private func parseRouteTypes(_ raw: String?) -> Set<Int> {
+extension NearbyStop {
+    /// Convenience initializer for the common case of a stop that isn't a
+    /// station/parent (location_type 0) with no platform info — i.e. every
+    /// favourite, search result, and journey-leg stop we rehydrate from a
+    /// cached record.
+    init(stopId: String, stopCode: String?, stopName: String, lat: Double, lon: Double,
+         routeTypes: String?, distanceM: Double) {
+        self.init(
+            stopId: stopId, stopCode: stopCode, stopName: stopName,
+            stopLat: lat, stopLon: lon, locationType: 0,
+            parentStation: nil, platformCode: nil,
+            routeTypes: routeTypes, distanceM: distanceM,
+        )
+    }
+
+    /// Build a minimal `NearbyStop` from a journey leg's stop reference so
+    /// we can hand it to the map's existing `focusOnRouteStop` machinery.
+    /// We don't have stop_code / parent_station here so set defensible
+    /// defaults; the map only cares about coordinate + name + route_types
+    /// for the marker tint.
+    init(journeyStop ref: JourneyStopRef, routeType: Int) {
+        self.init(
+            stopId: ref.stopId, stopCode: nil, stopName: ref.stopName,
+            lat: ref.stopLat, lon: ref.stopLon,
+            routeTypes: "\(routeType)", distanceM: Double(ref.walkDistanceM),
+        )
+    }
+}
+
+func parseRouteTypes(_ raw: String?) -> Set<Int> {
     guard let raw, !raw.isEmpty else { return [] }
     return Set(raw.split(separator: ",").compactMap {
         Int($0.trimmingCharacters(in: .whitespaces))
@@ -145,27 +181,6 @@ struct Departure: Codable, Identifiable, Hashable {
         case delaySeconds = "delay_seconds"
         case isRealtime = "is_realtime"
         case isCancelled = "is_cancelled"
-    }
-}
-
-struct VehiclePosition: Codable, Identifiable, Hashable {
-    let vehicleId: String
-    let tripId: String?
-    let routeId: String?
-    let lat: Double
-    let lon: Double
-    let bearing: Double?
-    let speed: Double?
-    let timestamp: Int
-
-    var id: String { vehicleId }
-    var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
-
-    enum CodingKeys: String, CodingKey {
-        case vehicleId = "vehicle_id"
-        case tripId = "trip_id"
-        case routeId = "route_id"
-        case lat, lon, bearing, speed, timestamp
     }
 }
 

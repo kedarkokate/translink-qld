@@ -111,8 +111,7 @@ struct StopDetailView: View {
             // Redcliffe Peninsula and, more rarely, as BRSP from Brisbane).
             // Buses/ferries keep grouping by route_id since their short_names
             // are stable per route.
-            let isTrain = (dep.routeType == RouteType.rail.rawValue
-                           || dep.routeType == RouteType.subway.rawValue)
+            let isTrain = RouteStyle.isTrain(dep.routeType)
             let routeKey = isTrain
                 ? "color:\(dep.routeColor ?? "")"
                 : "id:\(dep.routeId)"
@@ -167,7 +166,7 @@ struct StopDetailView: View {
 
     private func formattedFutureTime(_ date: Date) -> String {
         let cal = Calendar.current
-        let time = date.formatted(date: .omitted, time: .shortened)
+        let time = date.timeOfDay
         if cal.isDateInToday(date) { return "Today at \(time)" }
         if cal.isDateInTomorrow(date) { return "Tomorrow at \(time)" }
         let weekday = date.formatted(.dateTime.weekday(.wide))
@@ -224,17 +223,12 @@ struct StopDetailView: View {
     /// the broader bookmark is what users actually wanted.
     private func favouriteServiceButton(_ group: DepartureGroup) -> some View {
         let routeName = group.routeShortName ?? ""
-        let existing = favourites.service(
-            matching: stop.stopId, route: routeName,
+        let isFav = favourites.isServiceFavourite(
+            stopId: stop.stopId, route: routeName,
             headsign: group.headsign, secondsSinceMidnight: nil,
         )
-        let isFav = existing != nil
         return Button {
-            if let fav = existing {
-                favourites.removeService(id: fav.id)
-            } else {
-                favourites.addService(buildFavourite(group: group))
-            }
+            favourites.toggleService(buildFavourite(group: group))
         } label: {
             Image(systemName: isFav ? "star.fill" : "star")
                 .font(.system(size: 18))
@@ -302,8 +296,7 @@ struct StopDetailView: View {
         var seen = Set<String>()
         var result: [Route] = []
         for r in routes {
-            let isTrain = (r.routeType == RouteType.rail.rawValue
-                           || r.routeType == RouteType.subway.rawValue)
+            let isTrain = RouteStyle.isTrain(r.routeType)
             let key: String
             if isTrain {
                 let pill = trainLine(longName: r.routeLongName,
@@ -330,24 +323,18 @@ struct StopDetailView: View {
         longName: String? = nil, headsign: String? = nil,
     ) -> some View {
         let tappable = (shortName?.isEmpty == false)
-        let isTrain = (type == RouteType.rail.rawValue || type == RouteType.subway.rawValue)
-        let label: String = {
-            guard isTrain else { return text }
-            if let h = trainPillLabel(headsign: headsign) { return h }
-            if let line = trainLine(longName: longName, routeColor: routeColor) {
-                return line.pillName
-            }
-            return text
-        }()
-        let bg: Color = {
-            if isTrain {
-                if let c = Color(gtfsHex: routeColor) { return c }
-                if let line = trainLine(longName: longName, routeColor: routeColor),
-                   let c = Color(gtfsHex: line.hex) { return c }
-            }
-            return defaultRouteColor(type)
-        }()
-        let fg: Color = isTrain ? (Color(gtfsHex: routeTextColor) ?? .white) : .white
+        // RouteStyle.label() falls back to shortName ?? longName ?? "?" for
+        // non-train routes; this badge's caller-supplied `text` (often a
+        // pre-resolved displayName) is the desired fallback here, so only
+        // use RouteStyle's result for trains.
+        let label = RouteStyle.isTrain(type)
+            ? RouteStyle.label(routeType: type, routeShortName: shortName,
+                               routeLongName: longName, routeColor: routeColor,
+                               headsign: headsign)
+            : text
+        let bg = RouteStyle.tint(routeType: type, routeColor: routeColor,
+                                  routeLongName: longName, headsign: headsign)
+        let fg = RouteStyle.foreground(routeType: type, routeTextColor: routeTextColor)
         return Button {
             if let s = shortName, !s.isEmpty {
                 routeStopsRequest = RouteStopsRequest(shortName: s, headsign: headsign)
@@ -367,16 +354,6 @@ struct StopDetailView: View {
         }
         .buttonStyle(.plain)
         .disabled(!tappable)
-    }
-
-    private func defaultRouteColor(_ rt: Int) -> Color {
-        switch RouteType(rawValue: rt) {
-        case .bus: .blue
-        case .rail, .subway: .indigo
-        case .ferry: NearbyStop.ferryTint
-        case .tram: .pink
-        default: .gray
-        }
     }
 
     // MARK: Loading
