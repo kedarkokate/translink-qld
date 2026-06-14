@@ -1,20 +1,22 @@
-name: Seed D1 (daily if-changed)
+name: Seed D1 (twice-weekly if-changed)
 
-# Daily cron at 20:00 UTC = 06:00 Brisbane (UTC+10, no DST). On most days
-# this exits in ~2 minutes — install Node deps, HEAD the GTFS URL, see the
-# ETag matches, done. When TransLink republishes, the same workflow kicks
-# off the full seed against D1 (~2–3 h, comfortably inside the 6 h job cap).
+# Mon & Thu cron at 20:00 UTC = 06:00 Brisbane (UTC+10, no DST). Each run
+# downloads the GTFS feed and hashes the CSVs we ingest; most runs are a
+# quick no-op (a few minutes for install + download + hash) even if
+# TransLink has re-packaged the zip without changing the schedule data.
+# When the content hash actually differs, the same workflow kicks off the
+# full seed against D1 (~2–3 h, comfortably inside the 6 h job cap).
 #
 # Also exposes a manual button so you can fire a run on demand (e.g. to
 # verify the workflow after rotating secrets) without waiting for the cron.
 
 on:
   schedule:
-    - cron: "0 20 * * *"
+    - cron: "0 20 * * 1,4"
   workflow_dispatch:
     inputs:
       force:
-        description: "Force full seed even if ETag matches"
+        description: "Force full seed even if content hash matches"
         type: boolean
         default: false
 
