@@ -345,6 +345,7 @@ async function main() {
   const startedAt = Date.now();
   let totalRows = 0;
 
+  try {
   for (const spec of TABLES) {
     if (state.completed_tables.includes(spec.table)) {
       console.log(`  · ${spec.table}: already complete, skipping`);
@@ -409,6 +410,20 @@ async function main() {
     `  · D1 usage this cycle (since ${usage.periodStart}): `
     + `${usage.rowsWritten.toLocaleString()}/${D1_FREE_ROWS_WRITTEN_PER_MONTH.toLocaleString()} rows written`,
   );
+  } catch (err) {
+    // Persist whatever writes accumulated before the failure so the
+    // free-tier guard sees them on the next run. Without this, failed runs
+    // rack up untracked D1 charges that the guard can't account for.
+    if (totalDeleted > 0 || totalRows > 0) {
+      usage.rowsWritten += totalDeleted + totalRows;
+      await saveUsage(d1, usage).catch(() => {});
+      console.warn(
+        `  ⚠ seed failed — partial D1 usage recorded: `
+        + `${usage.rowsWritten.toLocaleString()}/${D1_FREE_ROWS_WRITTEN_PER_MONTH.toLocaleString()} rows written this cycle`,
+      );
+    }
+    throw err;
+  }
 
   clearCheckpoint();
 
