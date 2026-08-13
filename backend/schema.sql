@@ -89,7 +89,9 @@ CREATE TABLE stop_times (
   PRIMARY KEY (trip_id, stop_sequence)
 );
 CREATE INDEX idx_stoptimes_stop ON stop_times(stop_id, departure_time);
-CREATE INDEX idx_stoptimes_trip ON stop_times(trip_id);
+-- idx_stoptimes_trip deliberately omitted: the PK (trip_id, stop_sequence)
+-- already covers all trip_id lookups as its leading column. Keeping a
+-- separate single-column index tripled D1 write costs on every seed.
 
 -- Tracks the most recent successful ingest. Useful for the iOS app
 -- to display "schedule data current as of...".
