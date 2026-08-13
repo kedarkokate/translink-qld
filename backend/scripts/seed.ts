@@ -73,10 +73,25 @@ const CHECKPOINT_EVERY = 50_000;
 
 // D1's "Rows Written" billing metric: 50M/month included, then $1/million.
 const D1_FREE_ROWS_WRITTEN_PER_MONTH = 50_000_000;
-// Conservative upper bound for a full reseed's row-writes (deletes + inserts
-// across all tables + route_types updates), used so the guard below trips
-// *before* starting a reseed that would tip the account into paid usage.
-const ESTIMATED_FULL_RESEED_ROWS = 10_000_000;
+// Upper bound for a full reseed's D1 "Rows Written" charge. This is NOT the
+// same as the row count in the CSVs — D1 bills each index entry as a
+// separate write, so an INSERT into stop_times (3 indexes + data) costs 4×.
+//
+// Measured breakdown per seed (2.69M stop_times feed):
+//   stop_times  2.69M rows × (3× insert + 1× delete) = 10.76M writes
+//   trips        101K rows × (2× insert + 1× delete)  =  303K writes
+//   stops         13K rows × (3× insert + 1× delete)  =   52K writes
+//   other tables + route_types updates                 ≈   16K writes
+//   Total actual:                                       ≈ 11.1M writes
+//
+// Using 14M here gives a ~25% buffer above the measured cost to absorb
+// feed growth. At 14M/seed the guard allows up to 4 seeds per billing
+// period (4 × 14M = 56M is above 50M so it trips at seed 3 after
+// cumulative writes hit 3 × 11.1M = 33.3M; 33.3M + 14M = 47.3M < 50M
+// → seeds 1–3 run; after seed 3: 33.3M + 14M = 47.3M < 50M → seed 4
+// runs; after seed 4: 44.4M + 14M = 58.4M > 50M → seed 5 suspended).
+// This keeps the period total at ~44M, well inside the free 50M.
+const ESTIMATED_FULL_RESEED_ROWS = 14_000_000;
 // Day-of-month the Cloudflare billing cycle resets (from the invoice: "May
 // 13 – Jun 12"). Override with D1_BILLING_CYCLE_DAY if this drifts.
 const BILLING_CYCLE_ANCHOR_DAY = Number(process.env.D1_BILLING_CYCLE_DAY ?? 13);
