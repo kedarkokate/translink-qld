@@ -376,7 +376,10 @@ async function main() {
     for (const t of TABLES) {
       await d1.exec(`DELETE FROM ${t.table}`);
     }
-    await d1.exec(`DELETE FROM feed_meta WHERE key='last_ingest'`);
+    // Also clear feed_content_hash so that if this restart seed fails
+    // partway through, the next --if-changed cron doesn't see "hash
+    // unchanged → no seed needed" and silently leave the DB half-empty.
+    await d1.exec(`DELETE FROM feed_meta WHERE key IN ('last_ingest', 'feed_content_hash')`);
   }
 
   for (const spec of TABLES) {
@@ -503,7 +506,7 @@ async function ensureGtfsExtracted(resuming: boolean): Promise<void> {
  * The UPDATE is naturally idempotent (re-running over the same stop sets
  * the same value), so this is safe to retry on a partial failure.
  */
-async function deriveRouteTypes(d1: D1Client, parallel: number): Promise<number> {
+async function deriveRouteTypes(d1: D1Client, parallel: number): Promise<void> {
   console.log("→ deriving route_types per stop (chunked)");
   const stopIds = (await d1.query<{ stop_id: string }>(`SELECT stop_id FROM stops`))
     .map(r => r.stop_id);
@@ -529,7 +532,6 @@ async function deriveRouteTypes(d1: D1Client, parallel: number): Promise<number>
   await pool.drain();
   process.stdout.write("\r" + " ".repeat(60) + "\r");
   console.log(`  ✓ route_types: ${stopIds.length.toLocaleString()} stops`);
-  return stopIds.length;
 }
 
 /**
