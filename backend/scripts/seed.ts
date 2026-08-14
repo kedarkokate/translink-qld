@@ -26,10 +26,11 @@
  * updates) to a running total stored in feed_meta, keyed to the current
  * billing cycle (anchored on BILLING_CYCLE_ANCHOR_DAY). `--if-changed` runs
  * check this total first: if another full reseed could push the cycle over
- * the 50M/month free allowance, the run logs and exits without seeding,
- * leaving feed_content_hash untouched so the next scheduled run re-checks
- * once the cycle resets. Manual `npm run seed` / `--restart` runs bypass the
- * suspend (they're explicit) but still count toward the tracked total.
+ * the 49.5M soft cap (500K buffer below Cloudflare's 50M billing threshold),
+ * the run logs and exits without seeding, leaving feed_content_hash untouched
+ * so the next scheduled run re-checks once the cycle resets. Manual
+ * `npm run seed` / `--restart` runs bypass the hard suspend but emit a
+ * warning when approaching the cap, and still count toward the tracked total.
  *
  * Env (backend/.env):
  *   D1_ACCOUNT_ID, D1_API_TOKEN, D1_DATABASE_ID
@@ -71,26 +72,25 @@ const D1_PARAM_LIMIT = 100;         // D1 caps bound parameters at ?1..?100
 const DEFAULT_PARALLEL = 8;
 const CHECKPOINT_EVERY = 50_000;
 
-// D1's "Rows Written" billing metric: 50M/month included, then $1/million.
+// D1's "Rows Written" billing metric: 50M/month included on Workers Paid,
+// then $1/million. We use a 49.5M soft cap to keep a 500K safety buffer
+// below Cloudflare's actual billing threshold.
 const D1_FREE_ROWS_WRITTEN_PER_MONTH = 49_500_000;
-// Upper bound for a full reseed's D1 "Rows Written" charge. This is NOT the
-// same as the row count in the CSVs — D1 bills each index entry as a
-// separate write, so an INSERT into stop_times (3 indexes + data) costs 4×.
+// Conservative upper bound for a full reseed's D1 "Rows Written" charge.
+// This is NOT the same as the row count in the CSVs — D1 bills each index
+// entry as a separate write, so inserts into indexed tables cost 2–3×.
 //
-// Measured breakdown per seed (2.69M stop_times feed):
-//   stop_times  2.69M rows × (3× insert + 1× delete) = 10.76M writes
-//   trips        101K rows × (2× insert + 1× delete)  =  303K writes
-//   stops         13K rows × (3× insert + 1× delete)  =   52K writes
-//   other tables + route_types updates                 ≈   16K writes
-//   Total actual:                                       ≈ 11.1M writes
+// Measured breakdown per seed (2.69M stop_times feed, post idx_stoptimes_trip drop):
+//   stop_times  2.69M rows × 2 indexes → ~5.94M writes (inserts + deletes)
+//   trips        101K rows × 2 indexes → ~250K writes
+//   stops         13K rows × 3 indexes → ~55K writes
+//   other tables + route_types updates → ~15K writes
+//   Total actual:                        ~6.3M writes/seed
 //
-// Using 14M here gives a ~25% buffer above the measured cost to absorb
-// feed growth. At 14M/seed the guard allows up to 4 seeds per billing
-// period (4 × 14M = 56M is above 50M so it trips at seed 3 after
-// cumulative writes hit 3 × 11.1M = 33.3M; 33.3M + 14M = 47.3M < 50M
-// → seeds 1–3 run; after seed 3: 33.3M + 14M = 47.3M < 50M → seed 4
-// runs; after seed 4: 44.4M + 14M = 58.4M > 50M → seed 5 suspended).
-// This keeps the period total at ~44M, well inside the free 50M.
+// Using 14M gives a ~120% buffer over measured cost to absorb feed growth.
+// With 14M/seed the guard allows 7 seeds before suspending:
+//   after 7 seeds: 7 × 6.3M = 44.1M written; 44.1M + 14M = 58.1M > 49.5M
+//   → seed 8 is suspended. Period total stays well under the 49.5M soft cap.
 const ESTIMATED_FULL_RESEED_ROWS = 14_000_000;
 // Day-of-month the Cloudflare billing cycle resets (from the invoice: "May
 // 13 – Jun 12"). Override with D1_BILLING_CYCLE_DAY if this drifts.
@@ -284,12 +284,11 @@ async function main() {
   const d1 = makeClient(endpoint, token);
 
   if (args.restart) {
-    console.log("↻ --restart: clearing checkpoint, cache, and wiping all GTFS tables");
+    // Clear the local checkpoint + cache now so loadCheckpoint() below
+    // returns null (resuming = false). The actual D1 table wipes happen
+    // later, inside the try/catch, so partial delete costs are tracked.
+    console.log("↻ --restart: clearing checkpoint and cache");
     clearCheckpoint();
-    for (const t of TABLES) {
-      await d1.exec(`DELETE FROM ${t.table}`);
-    }
-    await d1.exec(`DELETE FROM feed_meta WHERE key='last_ingest'`);
   }
 
   const cp = loadCheckpoint();
@@ -307,6 +306,43 @@ async function main() {
         + (state.current ? `; current=${state.current.table} @ ${state.current.rows_written.toLocaleString()} rows` : "")
       : `→ fresh seed · parallel=${args.parallel}`,
   );
+
+  // Free-tier guard: load usage and check BEFORE downloading the feed so
+  // that suspended automated runs don't waste time on a ~50 MB download.
+  // --if-changed (cron) runs are hard-suspended when approaching the soft
+  // cap; manual runs bypass the suspend but receive a warning so the
+  // operator knows they may be incurring charges. Either way the writes
+  // are counted toward the tracked total at the end of the run.
+  const periodStart = currentBillingPeriodStart(new Date());
+  let usage = await loadUsage(d1);
+  if (!usage || usage.periodStart !== periodStart) {
+    usage = { periodStart, rowsWritten: 0 };
+  }
+  if (
+    args.ifChanged && !resuming
+    && usage.rowsWritten + ESTIMATED_FULL_RESEED_ROWS > D1_FREE_ROWS_WRITTEN_PER_MONTH
+  ) {
+    console.log(
+      `⏸ D1 free-tier guard: ${usage.rowsWritten.toLocaleString()} rows written this cycle `
+      + `(since ${usage.periodStart}); a full reseed (~${ESTIMATED_FULL_RESEED_ROWS.toLocaleString()} rows) `
+      + `could exceed the ${D1_FREE_ROWS_WRITTEN_PER_MONTH.toLocaleString()} soft cap. `
+      + `Suspending until the cycle resets on ${nextBillingPeriodStart(usage.periodStart)}.`,
+    );
+    await saveUsage(d1, usage);
+    clearCheckpoint();
+    return;
+  }
+  if (
+    !args.ifChanged && !resuming
+    && usage.rowsWritten + ESTIMATED_FULL_RESEED_ROWS > D1_FREE_ROWS_WRITTEN_PER_MONTH
+  ) {
+    console.warn(
+      `  ⚠ D1 free-tier warning: ${usage.rowsWritten.toLocaleString()} rows written this cycle `
+      + `(since ${usage.periodStart}); a full reseed (~${ESTIMATED_FULL_RESEED_ROWS.toLocaleString()} rows) `
+      + `may exceed the ${D1_FREE_ROWS_WRITTEN_PER_MONTH.toLocaleString()} soft cap. `
+      + `Proceeding because this is a manual run — charges may apply.`,
+    );
+  }
 
   await ensureGtfsExtracted(resuming);
 
@@ -328,36 +364,21 @@ async function main() {
     );
   }
 
-  // Free-tier guard: track D1 "Rows Written" against the 50M/month included
-  // allowance. --if-changed runs are automated (twice-weekly cron); if the
-  // cycle's usage is already close enough that another full reseed could
-  // tip the account into paid usage, suspend until the cycle resets. Manual
-  // `npm run seed` / `--restart` runs are explicit and bypass the suspend,
-  // but still count toward the tracked total below.
-  const periodStart = currentBillingPeriodStart(new Date());
-  let usage = await loadUsage(d1);
-  if (!usage || usage.periodStart !== periodStart) {
-    usage = { periodStart, rowsWritten: 0 };
-  }
-  if (
-    args.ifChanged && !resuming
-    && usage.rowsWritten + ESTIMATED_FULL_RESEED_ROWS > D1_FREE_ROWS_WRITTEN_PER_MONTH
-  ) {
-    console.log(
-      `⏸ D1 free-tier guard: ${usage.rowsWritten.toLocaleString()} rows written this cycle `
-      + `(since ${usage.periodStart}); a full reseed (~${ESTIMATED_FULL_RESEED_ROWS.toLocaleString()} rows) `
-      + `could exceed the ${D1_FREE_ROWS_WRITTEN_PER_MONTH.toLocaleString()}/month free allowance. `
-      + `Suspending until the cycle resets on ${nextBillingPeriodStart(usage.periodStart)}.`,
-    );
-    await saveUsage(d1, usage);
-    clearCheckpoint();
-    return;
-  }
-
   const startedAt = Date.now();
   let totalRows = 0;
 
   try {
+  // --restart: wipe all GTFS tables in D1. Inside the try/catch so that
+  // any partial delete costs are captured in d1.rowsWritten and persisted
+  // to the free-tier guard's running total even if a delete fails.
+  if (args.restart) {
+    console.log("→ wiping GTFS tables in D1");
+    for (const t of TABLES) {
+      await d1.exec(`DELETE FROM ${t.table}`);
+    }
+    await d1.exec(`DELETE FROM feed_meta WHERE key='last_ingest'`);
+  }
+
   for (const spec of TABLES) {
     if (state.completed_tables.includes(spec.table)) {
       console.log(`  · ${spec.table}: already complete, skipping`);
