@@ -72,7 +72,7 @@ const DEFAULT_PARALLEL = 8;
 const CHECKPOINT_EVERY = 50_000;
 
 // D1's "Rows Written" billing metric: 50M/month included, then $1/million.
-const D1_FREE_ROWS_WRITTEN_PER_MONTH = 50_000_000;
+const D1_FREE_ROWS_WRITTEN_PER_MONTH = 49_500_000;
 // Upper bound for a full reseed's D1 "Rows Written" charge. This is NOT the
 // same as the row count in the CSVs — D1 bills each index entry as a
 // separate write, so an INSERT into stop_times (3 indexes + data) costs 4×.
