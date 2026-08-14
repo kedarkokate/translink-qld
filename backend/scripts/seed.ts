@@ -283,13 +283,10 @@ async function main() {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${dbId}/query`;
   const d1 = makeClient(endpoint, token);
 
-  let totalDeleted = 0;
   if (args.restart) {
     console.log("↻ --restart: clearing checkpoint, cache, and wiping all GTFS tables");
     clearCheckpoint();
     for (const t of TABLES) {
-      const [{ c }] = await d1.query<{ c: number }>(`SELECT COUNT(*) as c FROM ${t.table}`);
-      totalDeleted += c;
       await d1.exec(`DELETE FROM ${t.table}`);
     }
     await d1.exec(`DELETE FROM feed_meta WHERE key='last_ingest'`);
@@ -373,8 +370,6 @@ async function main() {
     // On a fresh start for this table (not resuming mid-table), wipe it.
     // Otherwise the table is already partially populated and we resume.
     if (skipRows === 0 && !args.restart) {
-      const [{ c }] = await d1.query<{ c: number }>(`SELECT COUNT(*) as c FROM ${spec.table}`);
-      totalDeleted += c;
       await d1.exec(`DELETE FROM ${spec.table}`);
     }
 
@@ -396,7 +391,7 @@ async function main() {
     console.log(`  ✓ ${spec.table}: ${written.toLocaleString()} rows in ${secs}s`);
   }
 
-  const routeTypeUpdates = await deriveRouteTypes(d1, args.parallel);
+  await deriveRouteTypes(d1, args.parallel);
 
   // Stamp last_ingest + feed_content_hash so the next --if-changed run can
   // tell whether the schedule actually moved. contentHash was already
@@ -417,20 +412,27 @@ async function main() {
     [contentHash, nowUnix],
   );
 
-  // Record this run's D1 row-writes (deletes + inserts + route_types
-  // updates) against the free-tier guard's running total for this cycle.
-  usage.rowsWritten += totalDeleted + totalRows + routeTypeUpdates;
+  // Record actual D1 rows-written billed this run (read directly from
+  // meta.rows_written in every API response — includes all index-entry
+  // writes, so it matches what Cloudflare charges exactly).
+  usage.rowsWritten += d1.rowsWritten;
   await saveUsage(d1, usage);
   console.log(
     `  · D1 usage this cycle (since ${usage.periodStart}): `
     + `${usage.rowsWritten.toLocaleString()}/${D1_FREE_ROWS_WRITTEN_PER_MONTH.toLocaleString()} rows written`,
   );
+  if (usage.rowsWritten >= D1_FREE_ROWS_WRITTEN_PER_MONTH) {
+    console.warn(
+      `  ⚠ Free-tier limit reached (${usage.rowsWritten.toLocaleString()} rows written this cycle). `
+      + `Automated seeds suspended until the cycle resets on ${nextBillingPeriodStart(usage.periodStart)}.`,
+    );
+  }
   } catch (err) {
     // Persist whatever writes accumulated before the failure so the
     // free-tier guard sees them on the next run. Without this, failed runs
     // rack up untracked D1 charges that the guard can't account for.
-    if (totalDeleted > 0 || totalRows > 0) {
-      usage.rowsWritten += totalDeleted + totalRows;
+    if (d1.rowsWritten > 0) {
+      usage.rowsWritten += d1.rowsWritten;
       await saveUsage(d1, usage).catch(() => {});
       console.warn(
         `  ⚠ seed failed — partial D1 usage recorded: `
@@ -656,9 +658,15 @@ class ConcurrencyPool {
 interface D1Client {
   exec: (sql: string, params?: unknown[]) => Promise<void>;
   query: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>;
+  /** Running total of D1 "rows written" billed by Cloudflare for this client
+   *  instance, read directly from the `meta.rows_written` field returned by
+   *  every query response. Includes index-entry writes, so it matches what
+   *  Cloudflare actually charges — unlike manually counting inserted rows. */
+  readonly rowsWritten: number;
 }
 
 function makeClient(endpoint: string, token: string): D1Client {
+  let _rowsWritten = 0;
   const MAX_RETRIES = 6;
   async function call(sql: string, params: unknown[]) {
     let lastErr: unknown;
@@ -680,7 +688,7 @@ function makeClient(endpoint: string, token: string): D1Client {
           }
           throw new Error(`D1 HTTP ${res.status}: ${await res.text()}`);
         }
-        return await res.json() as { result: { results: unknown[] }[]; success: boolean };
+        return await res.json() as { result: { results: unknown[]; meta: { rows_written: number } }[]; success: boolean };
       } catch (err) {
         lastErr = err;
         const code = (err as { cause?: { code?: string }; code?: string })?.cause?.code
@@ -696,11 +704,16 @@ function makeClient(endpoint: string, token: string): D1Client {
     throw lastErr;
   }
   return {
-    exec: async (sql, params = []) => { await call(sql, params); },
+    exec: async (sql, params = []) => {
+      const json = await call(sql, params);
+      _rowsWritten += (json.result[0]?.meta as { rows_written?: number })?.rows_written ?? 0;
+    },
     query: async <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> => {
       const json = await call(sql, params);
+      _rowsWritten += (json.result[0]?.meta as { rows_written?: number })?.rows_written ?? 0;
       return (json.result[0]?.results ?? []) as T[];
     },
+    get rowsWritten() { return _rowsWritten; },
   };
 }
 
