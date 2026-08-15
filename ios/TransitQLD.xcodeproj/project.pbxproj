@@ -1,0 +1,447 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		113541BBA110E9BA0A907455 /* NearbyStopsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BDC6AB6C22DBFC61594BBCC /* NearbyStopsView.swift */; };
+		360E4BE821B654FBAF76BB23 /* Favourite.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC1A2B8C5E8DBFEED25CE35 /* Favourite.swift */; };
+		47D0B20937CA3D414BA23D6A /* RouteStopsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B4ADB70A8043310CD518D7D /* RouteStopsView.swift */; };
+		4E4FD2B3AD3195432EDA0973 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FAC64ED52F8E2E53A3056BD /* Models.swift */; };
+		5AE39060A0C147ED6ECD0FD5 /* NearbyStop+MapStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED776072CCD0ABFCC7BC7117 /* NearbyStop+MapStyle.swift */; };
+		5C38D7675A884765430086C3 /* TransLinkClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 729975EA4CF170FA9B3146E2 /* TransLinkClient.swift */; };
+		5F76A656CC61DCF5E02E7816 /* AppearanceMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24CD07B2B07CA7A20861BCDF /* AppearanceMode.swift */; };
+		62DAA8FD7D340A1F3332DB0B /* FavouritesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688BB8A7BC740338CF61A2AD /* FavouritesView.swift */; };
+		694F20DAF3B00DFBB0EAC95A /* TrainLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD1392B7BB152CD7392919F /* TrainLine.swift */; };
+		6F6CF69FDE0D459EB568DAA9 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 099418594FA6057F0FF84128 /* SettingsView.swift */; };
+		7BBD585B9F3D4397F64C7670 /* TilePosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9DE9E7A4BBF96E2E11C64A0 /* TilePosition.swift */; };
+		8C6C28D6EF1F4953C6B889FD /* StopDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5DA442F6C5DCC0BA31E8772 /* StopDetailView.swift */; };
+		8F784DBEB321564CC7DB18E0 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6CCB7CAC4152EB2B7948814 /* LocationManager.swift */; };
+		91E77D5F4810113553B79139 /* RouteStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28CD5CC552C43140CC710460 /* RouteStyle.swift */; };
+		9D28AA279BE7BC91192BF0CA /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6692CA71B68583387EF484F /* RootView.swift */; };
+		A8005A927E0F7887A40B6ACD /* TransLinkQLDApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13C15D9263EAD023FACCB778 /* TransLinkQLDApp.swift */; };
+		AE0599906AF8EB065DFC6E37 /* SearchLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06EDA23ECFA092ED68CBD78 /* SearchLocation.swift */; };
+		C13CD6F3CFC11AE4EF8BAD2F /* DirectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC07C98171A707DA61FB8BB /* DirectionsView.swift */; };
+		C250F52796EF97D68A3BEE7D /* TransitDirectionsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F3F4349329447873A92239 /* TransitDirectionsService.swift */; };
+		CA794165A9505B5BD46ACECD /* LocationSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBEB0D659F340343FA47E34 /* LocationSearchService.swift */; };
+		D065EE1716E5CBACDD520B61 /* PinnedJourneyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D541ECCC9C72E95C6709DEB2 /* PinnedJourneyView.swift */; };
+		D636B0806914D2C5B3D9E91B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0683B5FDAADA372508D74319 /* Assets.xcassets */; };
+		EA290A015998F6D56A7F6D58 /* RouteLookupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2D617C16A2CE149B9B2A29 /* RouteLookupView.swift */; };
+		EA527A46FAEC6C793BA8152C /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70C19E6C728E228FF83BE4A3 /* AppConfig.swift */; };
+		ED4170B5D191B5442CF544DA /* FavouritesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6722B911D383BCB13B3EE6BE /* FavouritesStore.swift */; };
+		F90D5109224E8B8678627729 /* MapTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E611826ED61A704ABF45DC9 /* MapTile.swift */; };
+		FFE69AEA9F8E881E9BA6BF20 /* LocationPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16DCC19E041DFCF6A7C8DB94 /* LocationPickerView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0683B5FDAADA372508D74319 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		099418594FA6057F0FF84128 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		0B4ADB70A8043310CD518D7D /* RouteStopsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteStopsView.swift; sourceTree = "<group>"; };
+		0DD1392B7BB152CD7392919F /* TrainLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainLine.swift; sourceTree = "<group>"; };
+		13C15D9263EAD023FACCB778 /* TransLinkQLDApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransLinkQLDApp.swift; sourceTree = "<group>"; };
+		16DCC19E041DFCF6A7C8DB94 /* LocationPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationPickerView.swift; sourceTree = "<group>"; };
+		1ABF1E3BF032C9A8A2C30E89 /* TransitQLD.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TransitQLD.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1BC1A2B8C5E8DBFEED25CE35 /* Favourite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Favourite.swift; sourceTree = "<group>"; };
+		24CD07B2B07CA7A20861BCDF /* AppearanceMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceMode.swift; sourceTree = "<group>"; };
+		28CD5CC552C43140CC710460 /* RouteStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteStyle.swift; sourceTree = "<group>"; };
+		5BDC6AB6C22DBFC61594BBCC /* NearbyStopsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyStopsView.swift; sourceTree = "<group>"; };
+		6722B911D383BCB13B3EE6BE /* FavouritesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavouritesStore.swift; sourceTree = "<group>"; };
+		688BB8A7BC740338CF61A2AD /* FavouritesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavouritesView.swift; sourceTree = "<group>"; };
+		6FAC64ED52F8E2E53A3056BD /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		70C19E6C728E228FF83BE4A3 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		729975EA4CF170FA9B3146E2 /* TransLinkClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransLinkClient.swift; sourceTree = "<group>"; };
+		9E611826ED61A704ABF45DC9 /* MapTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapTile.swift; sourceTree = "<group>"; };
+		A06EDA23ECFA092ED68CBD78 /* SearchLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchLocation.swift; sourceTree = "<group>"; };
+		A6692CA71B68583387EF484F /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		BBBEB0D659F340343FA47E34 /* LocationSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSearchService.swift; sourceTree = "<group>"; };
+		CD2D617C16A2CE149B9B2A29 /* RouteLookupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteLookupView.swift; sourceTree = "<group>"; };
+		D541ECCC9C72E95C6709DEB2 /* PinnedJourneyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedJourneyView.swift; sourceTree = "<group>"; };
+		D5DA442F6C5DCC0BA31E8772 /* StopDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopDetailView.swift; sourceTree = "<group>"; };
+		DAC5720F873E3AD711474F84 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E0F3F4349329447873A92239 /* TransitDirectionsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransitDirectionsService.swift; sourceTree = "<group>"; };
+		E9DE9E7A4BBF96E2E11C64A0 /* TilePosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilePosition.swift; sourceTree = "<group>"; };
+		ED776072CCD0ABFCC7BC7117 /* NearbyStop+MapStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NearbyStop+MapStyle.swift"; sourceTree = "<group>"; };
+		EFC07C98171A707DA61FB8BB /* DirectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionsView.swift; sourceTree = "<group>"; };
+		F6CCB7CAC4152EB2B7948814 /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0FF1283941CB0EA1F705A085 /* TransitQLD */ = {
+			isa = PBXGroup;
+			children = (
+				DAC5720F873E3AD711474F84 /* Info.plist */,
+				13C15D9263EAD023FACCB778 /* TransLinkQLDApp.swift */,
+				2D5E6A651AA2C2FFAA9C3626 /* Models */,
+				4E444E4263317FD43EBFC50E /* Resources */,
+				470104E804A2D160A7695CDA /* Services */,
+				F318CF11A29023D04CEC0659 /* Views */,
+			);
+			path = TransitQLD;
+			sourceTree = "<group>";
+		};
+		2D5E6A651AA2C2FFAA9C3626 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				24CD07B2B07CA7A20861BCDF /* AppearanceMode.swift */,
+				1BC1A2B8C5E8DBFEED25CE35 /* Favourite.swift */,
+				9E611826ED61A704ABF45DC9 /* MapTile.swift */,
+				6FAC64ED52F8E2E53A3056BD /* Models.swift */,
+				ED776072CCD0ABFCC7BC7117 /* NearbyStop+MapStyle.swift */,
+				28CD5CC552C43140CC710460 /* RouteStyle.swift */,
+				A06EDA23ECFA092ED68CBD78 /* SearchLocation.swift */,
+				E9DE9E7A4BBF96E2E11C64A0 /* TilePosition.swift */,
+				0DD1392B7BB152CD7392919F /* TrainLine.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		470104E804A2D160A7695CDA /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				70C19E6C728E228FF83BE4A3 /* AppConfig.swift */,
+				6722B911D383BCB13B3EE6BE /* FavouritesStore.swift */,
+				F6CCB7CAC4152EB2B7948814 /* LocationManager.swift */,
+				BBBEB0D659F340343FA47E34 /* LocationSearchService.swift */,
+				E0F3F4349329447873A92239 /* TransitDirectionsService.swift */,
+				729975EA4CF170FA9B3146E2 /* TransLinkClient.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		4E444E4263317FD43EBFC50E /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				0683B5FDAADA372508D74319 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		AAAF37203DBE7501FF07401B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1ABF1E3BF032C9A8A2C30E89 /* TransitQLD.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		DBD3F407A354F0D42D66E09A = {
+			isa = PBXGroup;
+			children = (
+				0FF1283941CB0EA1F705A085 /* TransitQLD */,
+				AAAF37203DBE7501FF07401B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F318CF11A29023D04CEC0659 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				EFC07C98171A707DA61FB8BB /* DirectionsView.swift */,
+				688BB8A7BC740338CF61A2AD /* FavouritesView.swift */,
+				16DCC19E041DFCF6A7C8DB94 /* LocationPickerView.swift */,
+				5BDC6AB6C22DBFC61594BBCC /* NearbyStopsView.swift */,
+				D541ECCC9C72E95C6709DEB2 /* PinnedJourneyView.swift */,
+				A6692CA71B68583387EF484F /* RootView.swift */,
+				CD2D617C16A2CE149B9B2A29 /* RouteLookupView.swift */,
+				0B4ADB70A8043310CD518D7D /* RouteStopsView.swift */,
+				099418594FA6057F0FF84128 /* SettingsView.swift */,
+				D5DA442F6C5DCC0BA31E8772 /* StopDetailView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		BB8744E44F4988AFB26FEE79 /* TransitQLD */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6E08F1D60A918FC53C790414 /* Build configuration list for PBXNativeTarget "TransitQLD" */;
+			buildPhases = (
+				D06A609379D3803D11221310 /* Sources */,
+				8DD997F7FA5BF01634BDA5D9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TransitQLD;
+			packageProductDependencies = (
+			);
+			productName = TransitQLD;
+			productReference = 1ABF1E3BF032C9A8A2C30E89 /* TransitQLD.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E666498C0D85967D7B3E7C0A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					BB8744E44F4988AFB26FEE79 = {
+						DevelopmentTeam = 62FZ5PWUFZ;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 5E0382ABEFA1559025EF985C /* Build configuration list for PBXProject "TransitQLD" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = DBD3F407A354F0D42D66E09A;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AAAF37203DBE7501FF07401B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				BB8744E44F4988AFB26FEE79 /* TransitQLD */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		8DD997F7FA5BF01634BDA5D9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D636B0806914D2C5B3D9E91B /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D06A609379D3803D11221310 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EA527A46FAEC6C793BA8152C /* AppConfig.swift in Sources */,
+				5F76A656CC61DCF5E02E7816 /* AppearanceMode.swift in Sources */,
+				C13CD6F3CFC11AE4EF8BAD2F /* DirectionsView.swift in Sources */,
+				360E4BE821B654FBAF76BB23 /* Favourite.swift in Sources */,
+				ED4170B5D191B5442CF544DA /* FavouritesStore.swift in Sources */,
+				62DAA8FD7D340A1F3332DB0B /* FavouritesView.swift in Sources */,
+				8F784DBEB321564CC7DB18E0 /* LocationManager.swift in Sources */,
+				FFE69AEA9F8E881E9BA6BF20 /* LocationPickerView.swift in Sources */,
+				CA794165A9505B5BD46ACECD /* LocationSearchService.swift in Sources */,
+				F90D5109224E8B8678627729 /* MapTile.swift in Sources */,
+				4E4FD2B3AD3195432EDA0973 /* Models.swift in Sources */,
+				5AE39060A0C147ED6ECD0FD5 /* NearbyStop+MapStyle.swift in Sources */,
+				113541BBA110E9BA0A907455 /* NearbyStopsView.swift in Sources */,
+				D065EE1716E5CBACDD520B61 /* PinnedJourneyView.swift in Sources */,
+				9D28AA279BE7BC91192BF0CA /* RootView.swift in Sources */,
+				EA290A015998F6D56A7F6D58 /* RouteLookupView.swift in Sources */,
+				47D0B20937CA3D414BA23D6A /* RouteStopsView.swift in Sources */,
+				91E77D5F4810113553B79139 /* RouteStyle.swift in Sources */,
+				AE0599906AF8EB065DFC6E37 /* SearchLocation.swift in Sources */,
+				6F6CF69FDE0D459EB568DAA9 /* SettingsView.swift in Sources */,
+				8C6C28D6EF1F4953C6B889FD /* StopDetailView.swift in Sources */,
+				7BBD585B9F3D4397F64C7670 /* TilePosition.swift in Sources */,
+				694F20DAF3B00DFBB0EAC95A /* TrainLine.swift in Sources */,
+				5C38D7675A884765430086C3 /* TransLinkClient.swift in Sources */,
+				A8005A927E0F7887A40B6ACD /* TransLinkQLDApp.swift in Sources */,
+				C250F52796EF97D68A3BEE7D /* TransitDirectionsService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0683F5B76221487F969BA833 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 62FZ5PWUFZ;
+				INFOPLIST_FILE = TransitQLD/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = au.com.transitqld.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A45FD5D73DA3DBD8F8553860 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 62FZ5PWUFZ;
+				INFOPLIST_FILE = TransitQLD/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = au.com.transitqld.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		B54E0CE83CA0C3ADB6BD06FD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.3;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+		C438B5CA72862F5E43AEAEC4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.3;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5E0382ABEFA1559025EF985C /* Build configuration list for PBXProject "TransitQLD" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B54E0CE83CA0C3ADB6BD06FD /* Debug */,
+				C438B5CA72862F5E43AEAEC4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6E08F1D60A918FC53C790414 /* Build configuration list for PBXNativeTarget "TransitQLD" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0683F5B76221487F969BA833 /* Debug */,
+				A45FD5D73DA3DBD8F8553860 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E666498C0D85967D7B3E7C0A /* Project object */;
+}
