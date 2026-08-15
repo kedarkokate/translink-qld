@@ -32,12 +32,22 @@ final class TransLinkClient {
         let d = JSONDecoder()
         // The API returns ISO-8601 dates with fractional seconds
         // (e.g. "2026-08-15T23:08:00.000Z" from JS Date.toISOString()).
-        // Swift's built-in .iso8601 strategy uses ISO8601DateFormatter
-        // without .withFractionalSeconds and silently fails on those strings.
-        // Use a formatter that accepts both with and without milliseconds.
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        d.dateDecodingStrategy = .formatted(iso)
+        // Swift's built-in .iso8601 strategy can't handle fractional seconds.
+        // ISO8601DateFormatter is not a DateFormatter subclass so .formatted()
+        // won't accept it — use .custom instead.
+        nonisolated(unsafe) let isoMs = ISO8601DateFormatter()
+        isoMs.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        nonisolated(unsafe) let isoPlain = ISO8601DateFormatter()
+        isoPlain.formatOptions = [.withInternetDateTime]
+        d.dateDecodingStrategy = .custom { decoder in
+            let s = try decoder.singleValueContainer().decode(String.self)
+            if let date = isoMs.date(from: s)    { return date }
+            if let date = isoPlain.date(from: s) { return date }
+            throw DecodingError.dataCorruptedError(
+                in: try decoder.singleValueContainer(),
+                debugDescription: "Cannot decode date string: \(s)"
+            )
+        }
         self.decoder = d
     }
 
