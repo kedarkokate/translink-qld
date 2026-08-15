@@ -50,7 +50,12 @@ app.get("/v1/stops/search", async c => {
 app.get("/v1/stops/nearby", async c => {
   const lat = Number(c.req.query("lat"));
   const lon = Number(c.req.query("lon"));
-  const radiusM = Math.min(Number(c.req.query("radius_m") ?? 500), 5000);
+  // 20 km cap — generous enough for a fully-zoomed-out SEQ view (iOS sends
+  // up to ~21 km for the diagonal of a 15 km-radius square visible region).
+  // The old 5 km cap caused train/ferry stations to silently vanish when
+  // the map was zoomed out; the in-code Haversine filter still culls to
+  // exactly the requested radius, and `limit` caps the response size.
+  const radiusM = Math.min(Number(c.req.query("radius_m") ?? 500), 20_000);
   const limit = Math.min(Number(c.req.query("limit") ?? 25), 100);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return c.json({ error: "lat and lon required" }, 400);

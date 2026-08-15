@@ -596,7 +596,12 @@ struct NearbyStopsView: View {
         let latMeters = region.span.latitudeDelta * 111_000
         let lonMeters = region.span.longitudeDelta * 111_000
             * cos(center.latitude * .pi / 180)
-        let raw = max(latMeters, lonMeters) / 2
+        // Use the half-diagonal of the visible rectangle, not the inscribed
+        // circle (max/2). The inscribed circle only covers 71% of the distance
+        // to corners, which is exactly where a lone train station can sit and
+        // disappear. The circumscribed half-diagonal guarantees every stop
+        // inside the visible region is within the query radius.
+        let raw = sqrt(pow(latMeters / 2, 2) + pow(lonMeters / 2, 2))
         let radius = min(max(raw, Self.minRadiusM), Self.maxRadiusM)
 
         loading = true; error = nil
