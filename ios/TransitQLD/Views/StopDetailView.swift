@@ -134,14 +134,23 @@ struct StopDetailView: View {
 
     @ViewBuilder
     private var noUpcomingSection: some View {
+        let beyond24h = nextServicePeek.map {
+            $0.effectiveDeparture > Date().addingTimeInterval(86_400)
+        } ?? false
+
         VStack(alignment: .leading, spacing: 12) {
-            Text("No upcoming departures in the next two hours.")
+            // Primary message: escalate to "no service today" when the next
+            // departure is more than 24 hours away.
+            Text(beyond24h
+                 ? "No service in the next 24 hours."
+                 : "No upcoming departures in the next two hours.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
             if let peek = nextServicePeek {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("NEXT SERVICE")
+                    Text(beyond24h ? "NEXT SCHEDULED SERVICE" : "NEXT SERVICE")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                     HStack(alignment: .center, spacing: 14) {
@@ -169,8 +178,11 @@ struct StopDetailView: View {
         let time = date.timeOfDay
         if cal.isDateInToday(date) { return "Today at \(time)" }
         if cal.isDateInTomorrow(date) { return "Tomorrow at \(time)" }
+        // Beyond tomorrow: include the date so "Wednesday" is unambiguous
+        // when it could be this week or next week.
         let weekday = date.formatted(.dateTime.weekday(.wide))
-        return "\(weekday) at \(time)"
+        let dayMonth = date.formatted(.dateTime.day().month(.abbreviated))
+        return "\(weekday) \(dayMonth) at \(time)"
     }
 
     @ViewBuilder
