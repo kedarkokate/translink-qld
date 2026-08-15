@@ -30,7 +30,14 @@ final class TransLinkClient {
         config.waitsForConnectivity = true
         self.session = URLSession(configuration: config)
         let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
+        // The API returns ISO-8601 dates with fractional seconds
+        // (e.g. "2026-08-15T23:08:00.000Z" from JS Date.toISOString()).
+        // Swift's built-in .iso8601 strategy uses ISO8601DateFormatter
+        // without .withFractionalSeconds and silently fails on those strings.
+        // Use a formatter that accepts both with and without milliseconds.
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        d.dateDecodingStrategy = .formatted(iso)
         self.decoder = d
     }
 
