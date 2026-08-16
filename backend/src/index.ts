@@ -135,7 +135,7 @@ app.get("/v1/journey", async c => {
   const windowMin = Math.min(Number(c.req.query("window_min") ?? 90), 180);
   // walk_m is the legacy single-value param (pre-1.0.4). walk_to_m /
   // walk_from_m override it per-leg so each side is configurable.
-  const walkFallback = Number(c.req.query("walk_m") ?? 800);
+  const walkFallback = Number(c.req.query("walk_m") ?? 500);
   const walkToM   = Math.min(Number(c.req.query("walk_to_m")   ?? walkFallback), 2000);
   const walkFromM = Math.min(Number(c.req.query("walk_from_m") ?? walkFallback), 2000);
   const limit = Math.min(Number(c.req.query("limit") ?? 12), 30);

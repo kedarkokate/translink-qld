@@ -20,5 +20,5 @@ enum AppConfig {
     /// AppStorage key for max walking distance from the alighting stop (metres).
     static let walkFromMKey = "journey_walk_from_m_v1"
     /// Default walk radius used on both legs when no preference is stored.
-    static let defaultWalkM = 800
+    static let defaultWalkM = 500
 }

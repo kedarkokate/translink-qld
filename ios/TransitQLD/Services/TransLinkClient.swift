@@ -98,8 +98,8 @@ final class TransLinkClient {
         from: CLLocationCoordinate2D,
         to: CLLocationCoordinate2D,
         windowMin: Int = 90,
-        walkToM: Int = 800,
-        walkFromM: Int = 800,
+        walkToM: Int = 500,
+        walkFromM: Int = 500,
         limit: Int = 12,
     ) async throws -> [JourneyOption] {
         struct Resp: Decodable { let options: [JourneyOption] }
