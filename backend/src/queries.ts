@@ -753,7 +753,8 @@ export async function planJourney(
   fromLat: number, fromLon: number,
   toLat: number, toLon: number,
   windowMinutes: number,
-  walkRadiusM: number,
+  walkToM: number,
+  walkFromM: number,
   maxResults: number,
   withTransfers: boolean = false,
 ): Promise<JourneyOption[]> {
@@ -765,8 +766,8 @@ export async function planJourney(
   // To stay under D1's 100-bound-parameter cap we inline both stop-id
   // lists as SQL literals — they come from D1, are trusted, and need no
   // parameter binding.
-  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkRadiusM, 80);
-  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkRadiusM, 80);
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, walkToM,   80);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   walkFromM, 80);
   if (fromStops.length === 0 || toStops.length === 0) return [];
 
   const now = new Date();
@@ -822,7 +823,7 @@ export async function planJourney(
     if (withTransfers) {
       return await planTransferJourneys(
         env, fromLat, fromLon, toLat, toLon,
-        windowMinutes, walkRadiusM, maxResults,
+        windowMinutes, walkToM, walkFromM, maxResults,
       );
     }
     return [];
@@ -922,7 +923,7 @@ export async function planJourney(
   if (withTransfers) {
     const transferOptions = await planTransferJourneys(
       env, fromLat, fromLon, toLat, toLon,
-      windowMinutes, walkRadiusM, maxResults,
+      windowMinutes, walkToM, walkFromM, maxResults,
     );
     allOptions = allOptions.concat(transferOptions);
   }
@@ -982,7 +983,8 @@ async function planTransferJourneys(
   fromLat: number, fromLon: number,
   toLat: number, toLon: number,
   windowMinutes: number,
-  walkRadiusM: number,
+  walkToM: number,
+  walkFromM: number,
   maxResults: number,
 ): Promise<JourneyOption[]> {
   // For transfer journeys we widen both the walk radius and the stop count:
@@ -990,12 +992,13 @@ async function planTransferJourneys(
   // radius but the actual hub-served interchange (e.g. Carindale Shopping)
   // sits 600-800 m away. Widening lets the algorithm find a feasible leg-2
   // alight even when the user's geocoded coord isn't on top of a busway.
-  const transferWalkM = Math.max(walkRadiusM, 800);
+  const transferWalkToM   = Math.max(walkToM,   800);
+  const transferWalkFromM = Math.max(walkFromM, 800);
   // 80 nearby stops on each side, matching the direct planner. SQL-side
   // both lists are inlined as literals (trusted from D1) so we don't blow
   // past D1's 100-bound-parameter cap.
-  const fromStops = await findNearbyStops(env, fromLat, fromLon, transferWalkM, 80);
-  const toStops   = await findNearbyStops(env, toLat,   toLon,   transferWalkM, 80);
+  const fromStops = await findNearbyStops(env, fromLat, fromLon, transferWalkToM,   80);
+  const toStops   = await findNearbyStops(env, toLat,   toLon,   transferWalkFromM, 80);
   if (fromStops.length === 0 || toStops.length === 0) return [];
 
   // Resolve hub parent_stations → their child platform stop_ids.

@@ -5,10 +5,32 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var order: [MapTileKind]
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw: String = AppearanceMode.system.rawValue
+    @AppStorage(AppConfig.walkToMKey)   private var walkToM:   Int = AppConfig.defaultWalkM
+    @AppStorage(AppConfig.walkFromMKey) private var walkFromM: Int = AppConfig.defaultWalkM
+
+    /// Valid walk-distance range and step size in metres.
+    private static let walkRange  = 100...2000
+    private static let walkStep   = 50
 
     init(rawOrder: Binding<String>) {
         self._rawOrder = rawOrder
         self._order = State(initialValue: MapTileOrder.decode(rawOrder.wrappedValue))
+    }
+
+    // MARK: Helpers
+
+    /// A stepper row that increments/decrements a walk-distance value in
+    // steps of `walkStep` metres, clamped to `walkRange`.
+    private func walkStepper(label: String, value: Binding<Int>) -> some View {
+        Stepper(value: value, in: Self.walkRange, step: Self.walkStep) {
+            HStack {
+                Text(label)
+                Spacer()
+                Text("\(value.wrappedValue) m")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
     }
 
     private var appVersion: String {
@@ -59,6 +81,22 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    walkStepper(
+                        label: "Walk to stop",
+                        value: $walkToM,
+                    )
+                    walkStepper(
+                        label: "Walk from stop",
+                        value: $walkFromM,
+                    )
+                } header: {
+                    Text("Journey Planner")
+                        .textCase(nil)
+                } footer: {
+                    Text("Maximum walking distance on each leg of a directions search. Increase if your nearest stops are further away; decrease to see only options within a short walk.")
+                }
+
+                Section {
                     HStack {
                         Text("Version")
                         Spacer()
@@ -95,6 +133,7 @@ struct SettingsView: View {
             }
             .environment(\.editMode, .constant(.active))
             .navigationTitle("Settings")
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 0) }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

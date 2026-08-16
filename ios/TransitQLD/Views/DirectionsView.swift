@@ -18,6 +18,9 @@ struct DirectionsView: View {
     @Environment(LocationManager.self) private var locationManager
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage(AppConfig.walkToMKey)   private var walkToM:   Int = AppConfig.defaultWalkM
+    @AppStorage(AppConfig.walkFromMKey) private var walkFromM: Int = AppConfig.defaultWalkM
+
     @State private var from: SearchLocation?
     @State private var to: SearchLocation?
     @State private var pickerKind: PickerKind?
@@ -472,6 +475,7 @@ struct DirectionsView: View {
         do {
             let results = try await TransLinkClient.shared.planJourney(
                 from: f.coordinate, to: t.coordinate,
+                walkToM: walkToM, walkFromM: walkFromM,
             )
             if results.isEmpty {
                 error = noRoutesMessage
@@ -483,14 +487,15 @@ struct DirectionsView: View {
         }
     }
 
-    private let noRoutesMessage = """
-    No transit options found within ~500 m walking distance and the next \
-    90 minutes — direct or via a hub transfer.
+    private var noRoutesMessage: String {
+        """
+        No transit options found within \(walkToM) m to the stop or \
+        \(walkFromM) m from the stop, in the next 90 minutes.
 
-    This can mean both ends are too far from any TransLink stop, or the \
-    relevant routes aren't running right now. For an alternative routing \
-    (multiple transfers, walking + ride-share), open Apple Maps below.
-    """
+        Try increasing your walk distances in Settings, or open Apple \
+        Maps below for full multi-modal directions.
+        """
+    }
 
     private func openInAppleMaps() {
         guard let f = from, let t = to else { return }

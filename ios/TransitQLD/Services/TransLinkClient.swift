@@ -98,11 +98,8 @@ final class TransLinkClient {
         from: CLLocationCoordinate2D,
         to: CLLocationCoordinate2D,
         windowMin: Int = 90,
-        // 800 m ≈ 10 min walk. The previous 500 m default frequently missed
-        // viable direct boarding stops when the user's geocoded origin was
-        // off-centre (e.g. a park or shopping centre), pushing users onto
-        // longer transfer journeys with the smaller direct catchment.
-        walkM: Int = 800,
+        walkToM: Int = 800,
+        walkFromM: Int = 800,
         limit: Int = 12,
     ) async throws -> [JourneyOption] {
         struct Resp: Decodable { let options: [JourneyOption] }
@@ -110,7 +107,8 @@ final class TransLinkClient {
             "from_lat": "\(from.latitude)", "from_lon": "\(from.longitude)",
             "to_lat":   "\(to.latitude)",   "to_lon":   "\(to.longitude)",
             "window_min": "\(windowMin)",
-            "walk_m": "\(walkM)",
+            "walk_to_m":   "\(walkToM)",
+            "walk_from_m": "\(walkFromM)",
             "limit": "\(limit)",
             // 1.0.1+ opts into hub-anchored one-transfer journeys. The
             // backend defaults to direct-only when this flag is absent,
