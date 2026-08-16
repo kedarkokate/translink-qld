@@ -358,6 +358,10 @@ struct NearbyStopsView: View {
                     : "line.3.horizontal.decrease.circle",
             )
         }
+        // Menu expands to fill available width in a VStack unlike Button
+        // with .buttonStyle(.plain). .fixedSize() keeps it content-sized
+        // so it aligns with the other pills in vertical layout.
+        .fixedSize()
         .accessibilityLabel("Filters")
         .contextMenu { tileLayoutMenu }
     }
