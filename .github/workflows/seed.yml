@@ -30,6 +30,9 @@ jobs:
   seed:
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    permissions:
+      contents: read
+      actions: write   # for the keepalive step below
     defaults:
       run:
         working-directory: backend
@@ -56,3 +59,12 @@ jobs:
           else
             npm run seed:if-changed
           fi
+
+      # GitHub auto-disables scheduled workflows after 60 days without repo
+      # activity (this one was disabled 2026-10 for exactly that). Hitting the
+      # enable endpoint on every run resets that timer.
+      - name: Keepalive
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/seed.yml/enable"

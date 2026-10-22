@@ -693,6 +693,7 @@ function makeClient(endpoint: string, token: string): D1Client {
   const MAX_RETRIES = 6;
   async function call(sql: string, params: unknown[]) {
     let lastErr: unknown;
+    let auth401Retried = false;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
         const res = await fetch(endpoint, {
@@ -704,6 +705,18 @@ function makeClient(endpoint: string, token: string): D1Client {
           body: JSON.stringify({ sql, params }),
         });
         if (!res.ok) {
+          if (res.status === 401 && !auth401Retried) {
+            // A lone 401 is usually a transient Cloudflare-side auth blip, not
+            // an actually-invalid token (see D1_API_TOKEN setup — it doesn't
+            // expire). Retry exactly once after a long pause; a second 401
+            // means the credential really is broken, and hammering it risks
+            // tripping Cloudflare's own auth-failure lockout (error 9109), so
+            // we stop instead of retrying further.
+            auth401Retried = true;
+            console.warn(`  ⚠ D1 HTTP 401 — pausing 60s before a single retry…`);
+            await sleep(60_000);
+            continue;
+          }
           if (res.status >= 500 && attempt < MAX_RETRIES - 1) {
             lastErr = new Error(`D1 HTTP ${res.status}`);
             await sleep(backoffMs(attempt));
